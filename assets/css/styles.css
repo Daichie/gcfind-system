@@ -1,0 +1,16 @@
+/* =========================================================
+   GCFind - Small custom styles (Tailwind does most work)
+   Keep this file for tweaks without fighting utility classes.
+   ========================================================= */
+
+/* Softer focus ring default for custom elements if needed */
+:focus-visible {
+  outline: none;
+}
+
+/* Improve tap targets on mobile */
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+

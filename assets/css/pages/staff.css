@@ -1,0 +1,34 @@
+/* Staff panel page styles */
+.staff-page .staff-grid { align-items: start; }
+
+/* v2.8.10 Staff stat cards alignment fix */
+.staff-stat-card {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 1.15rem !important;
+  min-height: 76px;
+  text-align: center;
+}
+.staff-stat-label {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #475569;
+  white-space: nowrap;
+}
+.staff-stat-value {
+  min-width: 1.5rem;
+  text-align: left;
+  font-size: 1.9rem;
+  line-height: 1;
+  font-weight: 900;
+  color: #065f46;
+}
+@media (max-width: 420px) {
+  .staff-stat-card {
+    justify-content: space-between !important;
+    text-align: left;
+  }
+}
