@@ -43,7 +43,7 @@ export default async function handler(req, res) {
     if (!email) return json(res, 400, { error: 'Email is required.' });
 
     const normalizedEmail = String(email).trim().toLowerCase();
-    const redirectTo = SITE_URL ? `${SITE_URL.replace(/\/$/, '')}/login.html` : undefined;
+    const redirectTo = SITE_URL ? `${SITE_URL.replace(/\/$/, '')}/reset-password.html` : undefined;
 
     const { error } = await admin.auth.resetPasswordForEmail(
       normalizedEmail,

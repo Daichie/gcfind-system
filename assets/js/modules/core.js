@@ -492,3 +492,143 @@ function initRealtimeRefresh() {
     console.warn('Realtime refresh skipped:', err);
   }
 }
+
+/* ===================== v2.8.23 GLOBAL NOTIFICATION DROPDOWN + PASSWORD TOGGLES ===================== */
+async function getCurrentNotificationScope() {
+  const authUser = await getAuthUser();
+  const cachedUser = getUser() || {};
+  return { uid: authUser?.id || cachedUser?.id || null, role: cachedUser?.role || '' };
+}
+
+async function fetchCurrentUserNotifications(limit = 25) {
+  if (!requireSupabase()) return [];
+  const scope = await getCurrentNotificationScope();
+  if (!scope.uid && !scope.role) return [];
+  try {
+    let query = sb.from('notifications').select('*').order('created_at', { ascending: false }).limit(limit);
+    if (scope.uid && scope.role) query = query.or(`recipient_user_id.eq.${scope.uid},recipient_role.eq.${scope.role}`);
+    else if (scope.uid) query = query.eq('recipient_user_id', scope.uid);
+    else query = query.eq('recipient_role', scope.role);
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  } catch (err) { console.warn('Unable to load notifications:', err.message); return []; }
+}
+
+async function markCurrentNotificationRead(notificationId) {
+  if (!requireSupabase() || !notificationId) return;
+  try { await sb.from('notifications').update({ is_read: true }).eq('id', notificationId); }
+  catch (err) { console.warn('Unable to mark notification as read:', err.message); showError('Unable to update notification. Please try again.'); }
+}
+
+async function deleteCurrentNotification(notificationId) {
+  if (!requireSupabase() || !notificationId) return false;
+  try {
+    const { error } = await sb.from('notifications').delete().eq('id', notificationId);
+    if (error) throw error;
+    showSuccess('Notification deleted.');
+    return true;
+  } catch (err) {
+    console.warn('Unable to delete notification:', err.message);
+    showError('Unable to delete notification. Run the latest notification delete policy in Supabase, then refresh.');
+    return false;
+  }
+}
+
+function notificationDropdownItem(n) {
+  return `
+    <article class="gc-notif-item ${n.is_read ? 'is-read' : 'is-unread'}">
+      <div class="gc-notif-main">
+        <div class="gc-notif-title">${escapeHtml(n.title || 'Notification')}</div>
+        <div class="gc-notif-message">${escapeHtml(n.message || '')}</div>
+        <div class="gc-notif-date">${formatDateTime(n.created_at)}</div>
+      </div>
+      <div class="gc-notif-actions">
+        ${!n.is_read ? `<button type="button" data-global-notif-read="${escapeHtml(n.id)}">Mark read</button>` : ''}
+        <button type="button" class="danger" data-global-notif-delete="${escapeHtml(n.id)}">Delete</button>
+      </div>
+    </article>`;
+}
+
+async function refreshGlobalNotifications() {
+  const dropdown = document.getElementById('globalNotificationDropdown');
+  const list = document.getElementById('globalNotificationList');
+  const badge = document.getElementById('globalNotificationBadge');
+  if (!dropdown || !list || !badge) return;
+  const notifications = await fetchCurrentUserNotifications(30);
+  const unread = notifications.filter(n => !n.is_read).length;
+  badge.textContent = unread > 99 ? '99+' : String(unread);
+  badge.classList.toggle('hidden', unread === 0);
+  list.innerHTML = notifications.length ? notifications.map(notificationDropdownItem).join('') : `<div class="gc-notif-empty">No notifications yet.</div>`;
+  list.querySelectorAll('[data-global-notif-read]').forEach(btn => btn.addEventListener('click', async () => {
+    await markCurrentNotificationRead(btn.dataset.globalNotifRead);
+    await refreshGlobalNotifications();
+    if (typeof loadUserClaimNotifications === 'function') await loadUserClaimNotifications();
+  }));
+  list.querySelectorAll('[data-global-notif-delete]').forEach(btn => btn.addEventListener('click', async () => {
+    const ok = await appConfirm('Delete this notification?');
+    if (!ok) return;
+    await deleteCurrentNotification(btn.dataset.globalNotifDelete);
+    await refreshGlobalNotifications();
+    if (typeof loadUserClaimNotifications === 'function') await loadUserClaimNotifications();
+  }));
+}
+
+function initGlobalNotificationDropdown() {
+  if (document.getElementById('globalNotificationWrap')) return;
+  const user = getUser();
+  if (!user) return;
+  const logoutBtn = document.querySelector('[data-action="logout"]');
+  if (!logoutBtn || !logoutBtn.parentElement) return;
+  const wrap = document.createElement('div');
+  wrap.id = 'globalNotificationWrap';
+  wrap.className = 'gc-notif-wrap';
+  wrap.innerHTML = `
+    <button type="button" id="globalNotificationButton" class="gc-notif-button" aria-expanded="false" aria-label="Notifications">
+      <i class="fa-solid fa-bell"></i><span id="globalNotificationBadge" class="gc-notif-badge hidden">0</span>
+    </button>
+    <section id="globalNotificationDropdown" class="gc-notif-dropdown hidden" aria-label="Notifications">
+      <header class="gc-notif-header"><div><div class="gc-notif-heading">Notifications</div><div class="gc-notif-subtitle">Updates for your account</div></div><button type="button" id="globalNotificationClose" class="gc-notif-close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></header>
+      <div id="globalNotificationList" class="gc-notif-list"><div class="gc-notif-empty">Loading notifications...</div></div>
+    </section>`;
+  logoutBtn.parentElement.insertBefore(wrap, logoutBtn);
+  const button = document.getElementById('globalNotificationButton');
+  const dropdown = document.getElementById('globalNotificationDropdown');
+  const close = document.getElementById('globalNotificationClose');
+  button?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const open = dropdown.classList.contains('hidden');
+    dropdown.classList.toggle('hidden', !open);
+    button.setAttribute('aria-expanded', String(open));
+    if (open) await refreshGlobalNotifications();
+  });
+  close?.addEventListener('click', () => { dropdown.classList.add('hidden'); button?.setAttribute('aria-expanded', 'false'); });
+  document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) { dropdown.classList.add('hidden'); button?.setAttribute('aria-expanded', 'false'); } });
+  refreshGlobalNotifications();
+}
+
+function initPasswordVisibilityToggles() {
+  document.querySelectorAll('input[type="password"]').forEach(input => {
+    if (!input.id || input.dataset.passwordToggleReady === 'true') return;
+    input.dataset.passwordToggleReady = 'true';
+    const parent = input.parentElement;
+    if (!parent) return;
+    parent.classList.add('gc-password-wrap');
+    input.classList.add('gc-password-input');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'gc-password-toggle';
+    btn.setAttribute('aria-label', 'Show password');
+    btn.setAttribute('title', 'Show password');
+    btn.innerHTML = '<i class="fa-regular fa-eye"></i>';
+    btn.addEventListener('click', () => {
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+      btn.setAttribute('title', show ? 'Hide password' : 'Show password');
+      btn.innerHTML = show ? '<i class="fa-regular fa-eye-slash"></i>' : '<i class="fa-regular fa-eye"></i>';
+      input.focus();
+    });
+    parent.appendChild(btn);
+  });
+}

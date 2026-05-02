@@ -86,3 +86,35 @@ table thead{
     min-width: 920px;
   }
 }
+
+/* v2.8.22 Analytics + smoother pagination polish */
+.gc-page-transition-out {
+  opacity: .35;
+  transform: translateY(2px);
+  transition: opacity .14s ease, transform .14s ease;
+}
+.gc-page-transition-in {
+  animation: gcFadePageIn .22s ease both;
+}
+.gc-fade-row {
+  animation: gcFadeRowIn .18s ease both;
+}
+@keyframes gcFadePageIn {
+  from { opacity: .35; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes gcFadeRowIn {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.pagination-btn {
+  transition: background-color .16s ease, border-color .16s ease, transform .12s ease, opacity .16s ease;
+}
+.pagination-btn:not(:disabled):hover {
+  background: #f0fdf4;
+  border-color: #86efac;
+  transform: translateY(-1px);
+}
+.analytics-ring {
+  transition: background .24s ease;
+}

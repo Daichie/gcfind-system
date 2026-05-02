@@ -661,3 +661,33 @@ select.form-select {
 
 /* v2.8.7 force hide old login float icons */
 .auth-floating-items,.float-item{display:none!important;}
+
+/* ===================== v2.8.23 notifications + password visibility ===================== */
+.gc-notif-wrap { position: relative; display: inline-flex; align-items: center; }
+.gc-notif-button { position: relative; display: inline-flex; align-items: center; justify-content: center; height: 2.35rem; width: 2.35rem; border-radius: .85rem; background: #f8fafc; color: #334155; border: 1px solid #e2e8f0; transition: .18s ease; }
+.gc-notif-button:hover { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+.gc-notif-badge { position: absolute; top: -.35rem; right: -.35rem; min-width: 1.1rem; height: 1.1rem; padding: 0 .28rem; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; background: #ef4444; color: white; font-size: .68rem; font-weight: 900; border: 2px solid white; }
+.gc-notif-dropdown { position: absolute; top: calc(100% + .65rem); right: 0; width: min(360px, calc(100vw - 2rem)); max-height: 520px; overflow: hidden; background: white; border: 1px solid #dbeafe; border-radius: 1rem; box-shadow: 0 20px 55px rgba(15, 23, 42, .18); z-index: 9999; }
+.gc-notif-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: .95rem 1rem; border-bottom: 1px solid #e2e8f0; background: linear-gradient(135deg, #ecfdf5, #f8fafc); }
+.gc-notif-heading { font-weight: 900; color: #0f172a; }
+.gc-notif-subtitle { margin-top: .1rem; font-size: .75rem; color: #64748b; }
+.gc-notif-close { color: #64748b; border-radius: .7rem; padding: .35rem .5rem; }
+.gc-notif-close:hover { background: #e2e8f0; color: #0f172a; }
+.gc-notif-list { max-height: 430px; overflow-y: auto; }
+.gc-notif-item { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; padding: .9rem 1rem; border-bottom: 1px solid #e2e8f0; }
+.gc-notif-item:last-child { border-bottom: 0; }
+.gc-notif-item.is-unread { background: #ecfdf5; }
+.gc-notif-title { font-size: .88rem; font-weight: 900; color: #0f172a; }
+.gc-notif-message { margin-top: .2rem; font-size: .8rem; line-height: 1.35; color: #475569; }
+.gc-notif-date { margin-top: .35rem; font-size: .7rem; color: #94a3b8; }
+.gc-notif-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: .4rem; }
+.gc-notif-actions button { white-space: nowrap; border-radius: .65rem; padding: .38rem .55rem; font-size: .7rem; font-weight: 800; background: #fff; color: #047857; border: 1px solid #a7f3d0; }
+.gc-notif-actions button:hover { background: #d1fae5; }
+.gc-notif-actions button.danger { color: #dc2626; border-color: #fecaca; }
+.gc-notif-actions button.danger:hover { background: #fef2f2; }
+.gc-notif-empty { padding: 1.1rem; text-align: center; color: #64748b; font-size: .85rem; }
+.gc-password-wrap { position: relative; }
+.gc-password-input { padding-right: 3rem !important; }
+.gc-password-toggle { position: absolute; right: .75rem; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; border-radius: .75rem; color: #64748b; background: transparent; transition: .18s ease; z-index: 3; }
+.gc-password-toggle:hover { background: #ecfdf5; color: #047857; }
+@media (max-width: 640px) { .gc-notif-dropdown { right: -4.25rem; width: min(340px, calc(100vw - 1.25rem)); } .gc-notif-item { flex-direction: column; } .gc-notif-actions { flex-direction: row; } }

@@ -180,4 +180,44 @@ function initRegisterForm() {
   });
 }
 
+
+function initResetPasswordForm() {
+  const form = document.getElementById('resetPasswordForm');
+  if (!form) return;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!requireSupabase()) return;
+
+    const password = (document.getElementById('newPassword')?.value || '').trim();
+    const confirmPassword = (document.getElementById('confirmNewPassword')?.value || '').trim();
+    const err = document.getElementById('resetPasswordError');
+    if (err) err.textContent = '';
+
+    if (!password || !confirmPassword) {
+      if (err) err.textContent = 'Please enter and confirm your new password.';
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      if (err) err.textContent = 'Passwords do not match.';
+      return;
+    }
+
+    showLoading('Updating password...');
+    const { error } = await sb.auth.updateUser({ password });
+    hideLoading();
+
+    if (error) {
+      if (err) err.textContent = error.message;
+      return;
+    }
+
+    showSuccess('Password updated successfully. Please login again.', { position: 'center', duration: 1800 });
+    await sb.auth.signOut();
+    clearSession();
+    setTimeout(() => { window.location.href = 'login.html'; }, 1600);
+  });
+}
+
 /* ===================== REPORTS / ITEMS ===================== */

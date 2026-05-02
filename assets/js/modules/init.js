@@ -17,10 +17,13 @@ async function boot() {
   updateNavProfile();
   syncRoleAwareNav();
   applyActiveNav();
+  initGlobalNotificationDropdown();
+  initPasswordVisibilityToggles();
   initPageTransitions();
   initUserLogin();
   initAdminLogin();
   initRegisterForm();
+  initResetPasswordForm();
   await initDashboard();
   try { await loadUserClaimNotifications(); } catch(e){ console.error('loadUserClaimNotifications', e); }
   await initDetails();
@@ -35,6 +38,7 @@ async function boot() {
   initAdminActions();
   initUIHelpers();
   initRealtimeRefresh();
+  try { initAdminRealtimeAnalytics(); } catch(e){ console.error('initAdminRealtimeAnalytics', e); }
 }
 
 document.addEventListener('DOMContentLoaded', boot);

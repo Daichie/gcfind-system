@@ -37,6 +37,144 @@ async function fetchAllClaims() {
   }));
 }
 
+
+
+function normalizeReportStatus(status) {
+  const raw = String(status || 'Pending').trim().toLowerCase();
+  if (raw === 'approved' || raw === 'verified') return 'Approved';
+  if (raw === 'rejected' || raw === 'declined') return 'Rejected';
+  if (raw === 'claimed') return 'Claimed';
+  if (raw === 'returned' || raw === 'resolved') return 'Returned';
+  return 'Pending';
+}
+
+function normalizeClaimStatus(status) {
+  const raw = String(status || 'Pending').trim().toLowerCase();
+  if (raw === 'approved' || raw === 'verified') return 'Approved';
+  if (raw === 'rejected' || raw === 'declined') return 'Rejected';
+  return 'Pending';
+}
+
+function buildReportAnalytics(reports) {
+  /*
+    GCFind workflow analytics is calculated from ALL current report records.
+    Important: Approved, Claimed, and Returned are cumulative workflow milestones.
+    Example: a Claimed item has already been Approved, so it is counted in both
+    approved and claimed. This prevents previous progress from disappearing when
+    a report moves to the next step. Percentages are always count / total reports.
+  */
+  const counts = { total: reports.length, pending: 0, approved: 0, rejected: 0, claimed: 0, returned: 0 };
+  reports.forEach(report => {
+    const status = normalizeReportStatus(report.status);
+    if (status === 'Pending') counts.pending++;
+    if (status === 'Rejected') counts.rejected++;
+    if (status === 'Approved' || status === 'Claimed' || status === 'Returned') counts.approved++;
+    if (status === 'Claimed' || status === 'Returned') counts.claimed++;
+    if (status === 'Returned') counts.returned++;
+  });
+  return counts;
+}
+
+function buildClaimAnalytics(claims) {
+  const counts = { total: claims.length, pending: 0, approved: 0, rejected: 0 };
+  claims.forEach(claim => {
+    const status = normalizeClaimStatus(claim.status);
+    if (status === 'Pending') counts.pending++;
+    if (status === 'Approved') counts.approved++;
+    if (status === 'Rejected') counts.rejected++;
+  });
+  return counts;
+}
+
+async function refreshAdminAnalyticsViews() {
+  if (typeof renderAdminAnalyticsCharts === 'function') {
+    await renderAdminAnalyticsCharts();
+  }
+  return Promise.resolve();
+}
+
+function withSmoothSectionUpdate(sectionSelector, task) {
+  const section = document.querySelector(sectionSelector);
+  if (section) section.classList.add('gc-page-transition-out');
+  return new Promise(resolve => setTimeout(resolve, 120))
+    .then(task)
+    .finally(() => {
+      const updatedSection = document.querySelector(sectionSelector);
+      if (updatedSection) {
+        updatedSection.classList.remove('gc-page-transition-out');
+        updatedSection.classList.add('gc-page-transition-in');
+        setTimeout(() => updatedSection.classList.remove('gc-page-transition-in'), 260);
+      }
+    });
+}
+
+function isRawIdentifier(value) {
+  const text = String(value || '').trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(text);
+}
+
+function cleanAuditAction(action = '') {
+  const raw = String(action || '').trim();
+  const normalized = raw.toLowerCase();
+  const map = {
+    'account created by system administrator': 'Created Account',
+    'password reset sent by system administrator': 'Sent Password Reset',
+    'report submitted': 'Submitted Report',
+    'report approved': 'Approved Report',
+    'report rejected': 'Rejected Report',
+    'report claimed': 'Marked Report as Claimed',
+    'report returned': 'Marked Report as Returned',
+    'report deleted': 'Deleted Report',
+    'report restored': 'Restored Report',
+    'claim approved': 'Approved Claim',
+    'claim rejected': 'Rejected Claim',
+    'claim request deleted': 'Deleted Claim Request',
+    'request ticket submitted': 'Submitted Request Ticket',
+    'request ticket responded': 'Replied to Request Ticket',
+    'request ticket resolved': 'Resolved Request Ticket',
+    'request ticket deleted': 'Deleted Request Ticket'
+  };
+  if (map[normalized]) return map[normalized];
+  return raw.replace(/\bCSSU\b/g, 'Security / Lost & Found Office').replace(/_/g, ' ');
+}
+
+function cleanAuditDetails(log = {}) {
+  const action = cleanAuditAction(log.action);
+  const details = String(log.details || '').trim();
+  const targetType = String(log.target_type || '').replace(/_/g, ' ');
+
+  if (!details || details === 'null' || isRawIdentifier(details)) {
+    if (action.includes('Claim')) return 'Claim request updated.';
+    if (action.includes('Report')) return 'Report status updated.';
+    if (action.includes('Account')) return 'User account record updated.';
+    if (action.includes('Password')) return 'Password recovery email requested.';
+    if (targetType) return `${targetType.charAt(0).toUpperCase() + targetType.slice(1)} updated.`;
+    return 'System action completed.';
+  }
+
+  if (details.length > 90) return `${details.slice(0, 90)}...`;
+  return details;
+}
+
+function isImportantAuditLog(log = {}) {
+  const action = String(log.action || '').toLowerCase();
+  const allowed = [
+    'account created',
+    'password reset',
+    'report approved',
+    'report rejected',
+    'report claimed',
+    'report returned',
+    'report deleted',
+    'report restored',
+    'claim approved',
+    'claim rejected',
+    'claim request deleted',
+    'request ticket'
+  ];
+  return allowed.some(key => action.includes(key));
+}
+
 function updateAnalyticsCards(counts) {
   setRing(document.querySelector('[data-stat-ring="total"]'), counts.total, Math.max(1, counts.total), '#0f172a');
   setRing(document.querySelector('[data-stat-ring="pending"]'), counts.pending, Math.max(1, counts.total), '#d97706');
@@ -51,14 +189,7 @@ async function renderAdminReports() {
   if (!tbody) return;
 
   const reports = await fetchAllReports();
-  const counts = {
-    total: reports.length,
-    pending: reports.filter(r => r.status === 'Pending').length,
-    approved: reports.filter(r => r.status === 'Approved').length,
-    rejected: reports.filter(r => r.status === 'Rejected').length,
-    claimed: reports.filter(r => r.status === 'Claimed').length,
-    returned: reports.filter(r => r.status === 'Returned').length,
-  };
+  const counts = buildReportAnalytics(reports);
 
   if ($('#statTotalReports')) $('#statTotalReports').textContent = counts.total;
   if ($('#statPendingReports')) $('#statPendingReports').textContent = counts.pending;
@@ -73,7 +204,10 @@ async function renderAdminReports() {
 
   if (!pageData.items.length) {
     tbody.innerHTML = `<tr><td class="px-4 py-6 text-center text-sm text-slate-600" colspan="7">No submitted reports yet.</td></tr>`;
-    renderPagination('adminReportsPagination', pageData, () => { APP_STATE.adminReportsPage--; renderAdminReports(); }, () => { APP_STATE.adminReportsPage++; renderAdminReports(); });
+    renderPagination('adminReportsPagination', pageData,
+      () => withSmoothSectionUpdate('#adminReportsBody', () => { APP_STATE.adminReportsPage--; return renderAdminReports(); }),
+      () => withSmoothSectionUpdate('#adminReportsBody', () => { APP_STATE.adminReportsPage++; return renderAdminReports(); })
+    );
     return;
   }
 
@@ -93,7 +227,10 @@ async function renderAdminReports() {
         <button data-report-action="delete" data-report-id="${r.id}" class="rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-700">Delete</button>
       </div></td>
     </tr>`).join('');
-  renderPagination('adminReportsPagination', pageData, () => { APP_STATE.adminReportsPage--; renderAdminReports(); }, () => { APP_STATE.adminReportsPage++; renderAdminReports(); });
+  renderPagination('adminReportsPagination', pageData,
+      () => withSmoothSectionUpdate('#adminReportsBody', () => { APP_STATE.adminReportsPage--; return renderAdminReports(); }),
+      () => withSmoothSectionUpdate('#adminReportsBody', () => { APP_STATE.adminReportsPage++; return renderAdminReports(); })
+    );
 }
 
 async function renderAdminClaims() {
@@ -109,7 +246,10 @@ async function renderAdminClaims() {
 
   if (!pageData.items.length) {
     tbody.innerHTML = `<tr><td class="px-4 py-6 text-center text-sm text-slate-600" colspan="6">No claim requests yet.</td></tr>`;
-    renderPagination('adminClaimsPagination', pageData, () => { APP_STATE.adminClaimsPage--; renderAdminClaims(); }, () => { APP_STATE.adminClaimsPage++; renderAdminClaims(); });
+    renderPagination('adminClaimsPagination', pageData,
+      () => withSmoothSectionUpdate('#adminClaimsBody', () => { APP_STATE.adminClaimsPage--; return renderAdminClaims(); }),
+      () => withSmoothSectionUpdate('#adminClaimsBody', () => { APP_STATE.adminClaimsPage++; return renderAdminClaims(); })
+    );
     return;
   }
 
@@ -128,7 +268,10 @@ async function renderAdminClaims() {
       </div></td>
     </tr>`;
   }).join('');
-  renderPagination('adminClaimsPagination', pageData, () => { APP_STATE.adminClaimsPage--; renderAdminClaims(); }, () => { APP_STATE.adminClaimsPage++; renderAdminClaims(); });
+  renderPagination('adminClaimsPagination', pageData,
+      () => withSmoothSectionUpdate('#adminClaimsBody', () => { APP_STATE.adminClaimsPage--; return renderAdminClaims(); }),
+      () => withSmoothSectionUpdate('#adminClaimsBody', () => { APP_STATE.adminClaimsPage++; return renderAdminClaims(); })
+    );
 }
 
 async function renderAdminLogs() {
@@ -145,18 +288,22 @@ async function renderAdminLogs() {
     return;
   }
 
-  const actorMap = await fetchProfileMapByIds(data.map(l => l.actor_id).filter(Boolean));
-  const pageData = paginate(data, APP_STATE.adminLogsPage, APP_STATE.adminPerPage);
+  const cleanLogs = (data || []).filter(isImportantAuditLog);
+  const actorMap = await fetchProfileMapByIds(cleanLogs.map(l => l.actor_id).filter(Boolean));
+  const pageData = paginate(cleanLogs, APP_STATE.adminLogsPage, APP_STATE.adminPerPage);
   APP_STATE.adminLogsPage = pageData.page;
 
   tbody.innerHTML = pageData.items.length ? pageData.items.map(log => `
     <tr class="border-t border-slate-200">
-      <td class="px-4 py-3 text-sm text-slate-900 font-medium">${escapeHtml(log.action)}</td>
-      <td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(log.details || '—')}</td>
-      <td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(actorMap[log.actor_id]?.full_name || actorMap[log.actor_id]?.email || log.actor_id || 'system')}</td>
+      <td class="px-4 py-3 text-sm text-slate-900 font-medium">${escapeHtml(cleanAuditAction(log.action))}</td>
+      <td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(cleanAuditDetails(log))}</td>
+      <td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(actorMap[log.actor_id]?.full_name || actorMap[log.actor_id]?.email || 'System')}</td>
       <td class="px-4 py-3 text-sm text-slate-700">${formatDateTime(log.created_at)}</td>
     </tr>`).join('') : `<tr><td class="px-4 py-6 text-center text-sm text-slate-600" colspan="4">No audit logs yet.</td></tr>`;
-  renderPagination('adminLogsPagination', pageData, () => { APP_STATE.adminLogsPage--; renderAdminLogs(); }, () => { APP_STATE.adminLogsPage++; renderAdminLogs(); });
+  renderPagination('adminLogsPagination', pageData,
+      () => withSmoothSectionUpdate('#adminLogsBody', () => { APP_STATE.adminLogsPage--; return renderAdminLogs(); }),
+      () => withSmoothSectionUpdate('#adminLogsBody', () => { APP_STATE.adminLogsPage++; return renderAdminLogs(); })
+    );
 }
 
 
@@ -195,7 +342,28 @@ async function renderAdminTicketNotifications() {
 async function createNotification({ recipientUserId = null, recipientRole = null, title = 'Notification', message = '', type = 'info', relatedId = null } = {}) {
   if (!requireSupabase()) return null;
   try {
-    const { data, error } = await sb.from('notifications').insert({ recipient_user_id: recipientUserId, recipient_role: recipientRole, title, message, type, related_id: relatedId, is_read: false }).select().single();
+    // For role-based notifications, create one notification per current user in that role.
+    // This lets each user delete their own notification without removing it for everyone else.
+    if (!recipientUserId && recipientRole) {
+      const { data: people, error: peopleError } = await sb
+        .from('profiles')
+        .select('id')
+        .eq('role', recipientRole);
+      if (!peopleError && Array.isArray(people) && people.length) {
+        const rows = people.map(p => ({
+          recipient_user_id: p.id,
+          recipient_role: recipientRole,
+          title, message, type, related_id: relatedId, is_read: false
+        }));
+        const { data, error } = await sb.from('notifications').insert(rows).select();
+        if (error) throw error;
+        return data;
+      }
+    }
+
+    const { data, error } = await sb.from('notifications').insert({
+      recipient_user_id: recipientUserId, recipient_role: recipientRole, title, message, type, related_id: relatedId, is_read: false
+    }).select().single();
     if (error) throw error;
     return data;
   } catch (err) { console.warn('notifications table not available yet:', err.message); return null; }
@@ -210,8 +378,21 @@ async function fetchNotificationsForCurrentUser(limit = 8) {
   } catch (err) { console.warn('Unable to fetch notifications:', err.message); return []; }
 }
 async function markNotificationRead(notificationId) { if (!requireSupabase() || !notificationId) return; try { await sb.from('notifications').update({ is_read: true }).eq('id', notificationId); } catch (err) { console.warn('Unable to mark notification read:', err.message); } }
-function notificationCard(n) { return `<article class="p-4 ${n.is_read ? 'bg-white' : 'bg-emerald-50/60'}"><div class="flex items-start justify-between gap-3"><div><div class="font-extrabold text-slate-900">${escapeHtml(n.title || 'Notification')}</div><div class="mt-1 text-sm text-slate-600">${escapeHtml(n.message || '')}</div><div class="mt-2 text-xs text-slate-500">${formatDateTime(n.created_at)}</div></div>${!n.is_read ? `<button class="rounded-lg bg-white px-3 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-200" data-notification-read="${escapeHtml(n.id)}">Mark read</button>` : ''}</div></article>`; }
-async function bindNotificationReadButtons(scope, rerender) { scope.querySelectorAll('[data-notification-read]').forEach(btn => btn.addEventListener('click', async () => { await markNotificationRead(btn.dataset.notificationRead); if (typeof rerender === 'function') await rerender(); })); }
+async function deleteNotificationRow(notificationId) {
+  if (!requireSupabase() || !notificationId) return false;
+  try {
+    const { error } = await sb.from('notifications').delete().eq('id', notificationId);
+    if (error) throw error;
+    showSuccess('Notification deleted.');
+    return true;
+  } catch (err) {
+    console.warn('Unable to delete notification:', err.message);
+    showError('Unable to delete notification. Run the latest notification delete policy in Supabase, then refresh.');
+    return false;
+  }
+}
+function notificationCard(n) { return `<article class="p-4 ${n.is_read ? 'bg-white' : 'bg-emerald-50/60'}"><div class="flex items-start justify-between gap-3"><div><div class="font-extrabold text-slate-900">${escapeHtml(n.title || 'Notification')}</div><div class="mt-1 text-sm text-slate-600">${escapeHtml(n.message || '')}</div><div class="mt-2 text-xs text-slate-500">${formatDateTime(n.created_at)}</div></div><div class="flex flex-wrap gap-2 justify-end">${!n.is_read ? `<button class="rounded-lg bg-white px-3 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-200" data-notification-read="${escapeHtml(n.id)}">Mark read</button>` : ''}<button class="rounded-lg bg-white px-3 py-1 text-xs font-bold text-red-600 ring-1 ring-red-200 hover:bg-red-50" data-notification-delete="${escapeHtml(n.id)}">Delete</button></div></div></article>`; }
+async function bindNotificationReadButtons(scope, rerender) { scope.querySelectorAll('[data-notification-read]').forEach(btn => btn.addEventListener('click', async () => { await markNotificationRead(btn.dataset.notificationRead); if (typeof refreshGlobalNotifications === 'function') await refreshGlobalNotifications(); if (typeof rerender === 'function') await rerender(); })); scope.querySelectorAll('[data-notification-delete]').forEach(btn => btn.addEventListener('click', async () => { const ok = await appConfirm('Delete this notification?'); if (!ok) return; await deleteNotificationRow(btn.dataset.notificationDelete); if (typeof refreshGlobalNotifications === 'function') await refreshGlobalNotifications(); if (typeof rerender === 'function') await rerender(); })); }
 
 async function renderStaffPanel() {
   const mount = $('#staffPanelMount');
@@ -348,6 +529,7 @@ function initAdminActions() {
         await createAuditLog('Report Deleted', 'item_report', id, id);
         showSuccess('Report deleted and saved for recovery.', { position: 'top-right' });
         await renderAdminReports();
+        await refreshAdminAnalyticsViews();
       } catch (err) {
         showError(err.message || 'Unable to delete/archive report.', { position: 'top-right', duration: 5200 });
       }
@@ -359,6 +541,7 @@ function initAdminActions() {
     if (error) { showError(error.message, { position: 'top-right' }); return; }
     await createAuditLog(`Report ${nextStatus}`, 'item_report', id, nextStatus);
     await renderAdminReports();
+    await refreshAdminAnalyticsViews();
   });
 
   document.getElementById('requestTicketBtn')?.addEventListener('click', () => document.getElementById('requestTicketModal')?.classList.remove('hidden'));
@@ -704,7 +887,7 @@ function openResetPasswordModal() {
       hideLoading();
       try {
         // safe fallback for local testing; uses public Supabase reset flow
-        const { error } = await sb.auth.resetPasswordForEmail(email);
+        const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password.html` });
         if (error) throw error;
         showSuccess('Password reset email requested.', { position: 'top-right' });
         closeSystemAdminModal();
@@ -971,18 +1154,31 @@ async function renderSystemAdmin() {
   }
 
   const usersBody = document.getElementById('systemAdminUsersBody');
-  const usersPageData = paginate(profiles, APP_STATE.systemAdminUsersPage, APP_STATE.systemAdminPerPage);
-  APP_STATE.systemAdminUsersPage = usersPageData.page;
-  usersBody.innerHTML = usersPageData.items.length ? usersPageData.items.map(profile => `<tr class="border-t border-slate-200"><td class="px-4 py-3 text-sm font-medium text-slate-900">${escapeHtml(profile.full_name || '—')}</td><td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(profile.email || '—')}</td><td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(friendlyRole(profile.role || ''))}</td><td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(profile.department || '—')}</td></tr>`).join('') : `<tr><td class="px-4 py-6 text-center text-sm text-slate-600" colspan="4">No accounts found.</td></tr>`;
-  renderPagination('systemAdminUsersPagination', usersPageData, () => { APP_STATE.systemAdminUsersPage--; renderSystemAdmin(); }, () => { APP_STATE.systemAdminUsersPage++; renderSystemAdmin(); });
+  const renderUsersPage = () => {
+    const usersPageData = paginate(profiles, APP_STATE.systemAdminUsersPage, APP_STATE.systemAdminPerPage);
+    APP_STATE.systemAdminUsersPage = usersPageData.page;
+    usersBody.innerHTML = usersPageData.items.length ? usersPageData.items.map(profile => `<tr class="border-t border-slate-200 gc-fade-row"><td class="px-4 py-3 text-sm font-medium text-slate-900">${escapeHtml(profile.full_name || '—')}</td><td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(profile.email || '—')}</td><td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(friendlyRole(profile.role || ''))}</td><td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(profile.department || '—')}</td></tr>`).join('') : `<tr><td class="px-4 py-6 text-center text-sm text-slate-600" colspan="4">No accounts found.</td></tr>`;
+    renderPagination('systemAdminUsersPagination', usersPageData,
+      () => withSmoothSectionUpdate('#systemAdminUsersBody', () => { APP_STATE.systemAdminUsersPage--; renderUsersPage(); }),
+      () => withSmoothSectionUpdate('#systemAdminUsersBody', () => { APP_STATE.systemAdminUsersPage++; renderUsersPage(); })
+    );
+  };
+  renderUsersPage();
 
   const logsBody = document.getElementById('systemAdminLogsBody');
   const { data: logs } = await sb.from('audit_logs').select('*').order('created_at', { ascending: false });
-  const actorMap = await fetchProfileMapByIds((logs || []).map(l => l.actor_id).filter(Boolean));
-  const pageData = paginate(logs || [], APP_STATE.systemAdminLogsPage, APP_STATE.systemAdminPerPage);
-  APP_STATE.systemAdminLogsPage = pageData.page;
-  logsBody.innerHTML = pageData.items.length ? pageData.items.map(log => `<tr class="border-t border-slate-200"><td class="px-4 py-3 text-sm font-medium text-slate-900">${escapeHtml(log.action)}</td><td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(log.details || '—')}</td><td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(actorMap[log.actor_id]?.full_name || actorMap[log.actor_id]?.email || log.actor_id || 'system')}</td><td class="px-4 py-3 text-sm text-slate-700">${formatDateTime(log.created_at)}</td></tr>`).join('') : `<tr><td class="px-4 py-6 text-center text-sm text-slate-600" colspan="4">No audit logs yet.</td></tr>`;
-  renderPagination('systemAdminLogsPagination', pageData, () => { APP_STATE.systemAdminLogsPage--; renderSystemAdmin(); }, () => { APP_STATE.systemAdminLogsPage++; renderSystemAdmin(); });
+  const cleanLogs = (logs || []).filter(isImportantAuditLog);
+  const actorMap = await fetchProfileMapByIds(cleanLogs.map(l => l.actor_id).filter(Boolean));
+  const renderLogsPage = () => {
+    const pageData = paginate(cleanLogs, APP_STATE.systemAdminLogsPage, APP_STATE.systemAdminPerPage);
+    APP_STATE.systemAdminLogsPage = pageData.page;
+    logsBody.innerHTML = pageData.items.length ? pageData.items.map(log => `<tr class="border-t border-slate-200 gc-fade-row"><td class="px-4 py-3 text-sm font-medium text-slate-900">${escapeHtml(cleanAuditAction(log.action))}</td><td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(cleanAuditDetails(log))}</td><td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(actorMap[log.actor_id]?.full_name || actorMap[log.actor_id]?.email || 'System')}</td><td class="px-4 py-3 text-sm text-slate-700">${formatDateTime(log.created_at)}</td></tr>`).join('') : `<tr><td class="px-4 py-6 text-center text-sm text-slate-600" colspan="4">No audit logs yet.</td></tr>`;
+    renderPagination('systemAdminLogsPagination', pageData,
+      () => withSmoothSectionUpdate('#systemAdminLogsBody', () => { APP_STATE.systemAdminLogsPage--; renderLogsPage(); }),
+      () => withSmoothSectionUpdate('#systemAdminLogsBody', () => { APP_STATE.systemAdminLogsPage++; renderLogsPage(); })
+    );
+  };
+  renderLogsPage();
 }
 
 
@@ -1025,6 +1221,26 @@ function groupReportsByDate(reports) {
   return { labels, values: labels.map(label => grouped[label]) };
 }
 
+
+function getPercentLabel(value, total) {
+  const n = Number(value) || 0;
+  const t = Number(total) || 0;
+  if (!t) return '0%';
+  return `${Math.round((n / t) * 100)}%`;
+}
+
+function chartTooltipWithPercentage(totalGetter) {
+  return {
+    callbacks: {
+      label(context) {
+        const label = context.label || context.dataset?.label || 'Record';
+        const value = Number(context.parsed?.y ?? context.parsed ?? 0) || 0;
+        const total = typeof totalGetter === 'function' ? totalGetter() : 0;
+        return `${label}: ${value} (${getPercentLabel(value, total)})`;
+      }
+    }
+  };
+}
 async function renderAdminAnalyticsCharts() {
   if (!document.getElementById('reportsTrendChart') && !document.getElementById('statusBarChart') && !document.getElementById('claimsPieChart')) return;
   if (typeof Chart === 'undefined') {
@@ -1035,19 +1251,24 @@ async function renderAdminAnalyticsCharts() {
   const reports = await fetchAllReports();
   const claims = await fetchAllClaims();
 
+  const reportSnapshot = buildReportAnalytics(reports);
+  const claimSnapshot = buildClaimAnalytics(claims);
+
   const statusCounts = {
-    Pending: reports.filter(r => r.status === 'Pending').length,
-    Approved: reports.filter(r => r.status === 'Approved').length,
-    Rejected: reports.filter(r => r.status === 'Rejected').length,
-    Claimed: reports.filter(r => r.status === 'Claimed').length,
-    Returned: reports.filter(r => r.status === 'Returned').length
+    Pending: reportSnapshot.pending,
+    Approved: reportSnapshot.approved,
+    Rejected: reportSnapshot.rejected,
+    Claimed: reportSnapshot.claimed,
+    Returned: reportSnapshot.returned
   };
 
   const claimCounts = {
-    Pending: claims.filter(c => c.status === 'Pending').length,
-    Approved: claims.filter(c => c.status === 'Approved').length,
-    Rejected: claims.filter(c => c.status === 'Rejected').length
+    Pending: claimSnapshot.pending,
+    Approved: claimSnapshot.approved,
+    Rejected: claimSnapshot.rejected
   };
+  const totalReportsForPercent = reportSnapshot.total;
+  const totalClaimsForPercent = claimSnapshot.total;
 
   const trend = groupReportsByDate(reports);
   const trendLabels = trend.labels.length ? trend.labels : ['No Data'];
@@ -1098,7 +1319,11 @@ async function renderAdminAnalyticsCharts() {
           borderRadius: 4
         }]
       },
-      options: { ...baseOptions, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
+      options: {
+        ...baseOptions,
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+        plugins: { ...baseOptions.plugins, tooltip: chartTooltipWithPercentage(() => totalReportsForPercent) }
+      },
       plugins: [gcfindEmptyChartPlugin]
     });
   }
@@ -1118,9 +1343,35 @@ async function renderAdminAnalyticsCharts() {
           borderWidth: 3
         }]
       },
-      options: { ...baseOptions, cutout: '58%' },
+      options: { ...baseOptions, cutout: '58%', plugins: { ...baseOptions.plugins, tooltip: chartTooltipWithPercentage(() => totalClaimsForPercent) } },
       plugins: [gcfindEmptyChartPlugin]
     });
+  }
+}
+
+
+function initAdminRealtimeAnalytics() {
+  if (!requireSupabase() || window.GC_ADMIN_REALTIME_READY) return;
+  if (!['admin', 'system-admin'].includes(document.body?.dataset?.page || '')) return;
+  window.GC_ADMIN_REALTIME_READY = true;
+
+  const safeRefresh = async () => {
+    try {
+      await renderAdminReports();
+      await renderAdminClaims();
+      await refreshAdminAnalyticsViews();
+    } catch (err) {
+      console.warn('Admin realtime refresh skipped:', err.message);
+    }
+  };
+
+  try {
+    sb.channel('gcfind-admin-live-dashboard')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'item_reports' }, safeRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'claim_requests' }, safeRefresh)
+      .subscribe();
+  } catch (err) {
+    console.warn('Realtime dashboard subscription unavailable:', err.message);
   }
 }
 

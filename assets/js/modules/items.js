@@ -502,6 +502,7 @@ async function loadUserClaimNotifications() {
       .from('claim_requests')
       .select('*')
       .eq('claimant_id', authUser.id)
+      .is('user_deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(10);
     claims = claimResult.data || [];
@@ -530,7 +531,7 @@ async function loadUserClaimNotifications() {
           <p class="mt-1 text-sm text-slate-600">${escapeHtml(n.message || '')}</p>
           <p class="mt-2 text-xs text-slate-500">${formatDateTime(n.created_at)}</p>
         </div>
-        ${!n.is_read ? `<button class="w-fit rounded-lg bg-white px-3 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-200" data-user-notification-read="${escapeHtml(n.id)}">Mark read</button>` : ''}
+        <div class="flex flex-wrap gap-2">${!n.is_read ? `<button class="w-fit rounded-lg bg-white px-3 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-200" data-user-notification-read="${escapeHtml(n.id)}">Mark read</button>` : ''}<button class="w-fit rounded-lg bg-white px-3 py-1 text-xs font-bold text-red-600 ring-1 ring-red-200 hover:bg-red-50" data-user-notification-delete="${escapeHtml(n.id)}">Delete</button></div>
       </div>
     </article>`);
 
@@ -554,7 +555,10 @@ async function loadUserClaimNotifications() {
             <p class="mt-1 text-sm text-slate-600">${escapeHtml(message)}</p>
             <p class="mt-1 text-xs text-slate-500">${escapeHtml(report.location || '')}</p>
           </div>
-          <span class="inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-extrabold ${badgeClass}">${escapeHtml(status)}</span>
+          <div class="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+            <span class="inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-extrabold ${badgeClass}">${escapeHtml(status)}</span>
+            <button class="w-fit rounded-lg bg-white px-3 py-1 text-xs font-bold text-red-600 ring-1 ring-red-200 hover:bg-red-50" data-user-claim-delete="${escapeHtml(claim.id)}">Delete</button>
+          </div>
         </div>
       </article>`;
   });
@@ -573,6 +577,47 @@ async function loadUserClaimNotifications() {
   list.querySelectorAll('[data-user-notification-read]').forEach(btn => btn.addEventListener('click', async () => {
     await sb.from('notifications').update({ is_read: true }).eq('id', btn.dataset.userNotificationRead);
     await loadUserClaimNotifications();
+    if (typeof refreshGlobalNotifications === 'function') await refreshGlobalNotifications();
+  }));
+
+  list.querySelectorAll('[data-user-notification-delete]').forEach(btn => btn.addEventListener('click', async () => {
+    const ok = await appConfirm('Delete this notification?');
+    if (!ok) return;
+    const id = btn.dataset.userNotificationDelete;
+    try {
+      const { error } = await sb.from('notifications').delete().eq('id', id);
+      if (error) throw error;
+      const row = btn.closest('article');
+      if (row) row.remove();
+      showSuccess('Notification deleted.');
+    } catch (err) {
+      console.warn('Unable to delete notification:', err.message);
+      showError('Unable to delete notification. Run the latest notification delete policy in Supabase, then refresh.');
+    }
+    await loadUserClaimNotifications();
+    if (typeof refreshGlobalNotifications === 'function') await refreshGlobalNotifications();
+  }));
+
+  list.querySelectorAll('[data-user-claim-delete]').forEach(btn => btn.addEventListener('click', async () => {
+    const ok = await appConfirm('Delete this claim update from your dashboard?');
+    if (!ok) return;
+    const id = btn.dataset.userClaimDelete;
+    try {
+      // Hide the claim update for the current user without deleting the admin/security record.
+      const { error } = await sb
+        .from('claim_requests')
+        .update({ user_deleted_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('claimant_id', authUser.id);
+      if (error) throw error;
+      btn.closest('article')?.remove();
+      showSuccess('Claim update deleted from your dashboard.');
+    } catch (err) {
+      console.warn('Unable to delete claim update:', err.message);
+      showError('Unable to delete claim update. Run the latest cleanup SQL in Supabase, then refresh.');
+    }
+    await loadUserClaimNotifications();
+    if (typeof refreshGlobalNotifications === 'function') await refreshGlobalNotifications();
   }));
 }
 
