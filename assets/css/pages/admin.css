@@ -1,0 +1,133 @@
+/* Admin panel page styles */
+.admin-page .analytics-grid canvas { max-width: 100%; }
+
+.admin-tabs{display:flex;flex-wrap:wrap;gap:.75rem}.admin-tab{padding:.75rem 1rem;border-radius:1rem;border:1px solid #d1d5db;background:#fff;color:#334155;font-weight:700}.analytics-card{background:#fff;border-radius:1.5rem;box-shadow:0 1px 3px rgba(15,23,42,.08);border:1px solid #e2e8f0;padding:1rem;display:flex;align-items:center;gap:1rem}.analytics-ring{width:68px;height:68px;border-radius:999px;background:conic-gradient(var(--ring,#16a34a) var(--p,180deg), #e5e7eb 0);position:relative;display:grid;place-items:center}.analytics-ring::before{content:attr(data-value);position:absolute;inset:8px;background:#fff;border-radius:999px;display:grid;place-items:center;font-size:.75rem;font-weight:800;color:#334155}.chart-wrap{min-height:240px;display:flex;align-items:center;justify-content:center}
+
+
+/* MVP admin polish */
+.admin-tabs{
+  background:#ffffff;
+  border:1px solid var(--gc-border, #d6e9df);
+  padding:.5rem;
+  border-radius:12px;
+  gap:.5rem;
+}
+
+.admin-tab{
+  padding:.78rem 1rem;
+  font-weight:800;
+}
+
+.analytics-card{
+  border-radius:12px !important;
+  padding:1.15rem !important;
+  align-items:center;
+  min-height:92px;
+}
+
+.analytics-ring{
+  width:64px;
+  height:64px;
+}
+
+.analytics-ring::before{
+  inset:7px;
+}
+
+.admin-panel-section table thead,
+table thead{
+  background:#f0fdf4 !important;
+}
+
+
+/* v2.8.11 System Admin width/readability fix */
+.system-admin-grid {
+  align-items: start;
+}
+.system-admin-wide-section {
+  grid-column: 1 / -1;
+}
+.system-admin-table-wrap {
+  width: 100%;
+}
+.system-admin-readable-table {
+  width: 100%;
+  table-layout: auto;
+}
+.system-admin-readable-table th,
+.system-admin-readable-table td {
+  vertical-align: top;
+}
+.system-admin-readable-table td {
+  line-height: 1.45;
+}
+.system-admin-logs-table th:nth-child(1),
+.system-admin-logs-table td:nth-child(1) {
+  width: 18%;
+}
+.system-admin-logs-table th:nth-child(2),
+.system-admin-logs-table td:nth-child(2) {
+  width: 42%;
+}
+.system-admin-logs-table th:nth-child(3),
+.system-admin-logs-table td:nth-child(3) {
+  width: 22%;
+}
+.system-admin-logs-table th:nth-child(4),
+.system-admin-logs-table td:nth-child(4) {
+  width: 18%;
+  white-space: nowrap;
+}
+@media (max-width: 900px) {
+  .system-admin-readable-table {
+    min-width: 760px;
+  }
+  .system-admin-logs-table {
+    min-width: 920px;
+  }
+}
+
+/* v2.8.22 Analytics + smoother pagination polish */
+.gc-page-transition-out {
+  opacity: .35;
+  transform: translateY(2px);
+  transition: opacity .14s ease, transform .14s ease;
+}
+.gc-page-transition-in {
+  animation: gcFadePageIn .22s ease both;
+}
+.gc-fade-row {
+  animation: gcFadeRowIn .18s ease both;
+}
+@keyframes gcFadePageIn {
+  from { opacity: .35; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes gcFadeRowIn {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.pagination-btn {
+  transition: background-color .16s ease, border-color .16s ease, transform .12s ease, opacity .16s ease;
+}
+.pagination-btn:not(:disabled):hover {
+  background: #f0fdf4;
+  border-color: #86efac;
+  transform: translateY(-1px);
+}
+.analytics-ring {
+  transition: background .24s ease;
+}
+
+
+/* FINAL FIX: keep login logo static and natural */
+.login-logo,
+.auth-logo,
+.logo-img,
+.login-card img,
+.auth-card img {
+  animation: none !important;
+  transform: none !important;
+  transition: none !important;
+  filter: none !important;
+}

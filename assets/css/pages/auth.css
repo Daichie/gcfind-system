@@ -1,0 +1,164 @@
+/* Auth page styles and future overrides */
+.auth-card-wrap { max-width: 100%; }
+
+.auth-card-wrap{position:relative;overflow:visible;}
+.auth-card-wrap::before{content:"";position:absolute;inset:-20px;pointer-events:none;background:url("../../gcfind-logo.png") center/55% no-repeat;opacity:.08;filter:blur(.2px);}
+.auth-card{position:relative;z-index:1;}
+
+
+
+/* ===================== GCFind v2.8.7 Final Login UI Polish ===================== */
+.auth-bg {
+  background:
+    radial-gradient(circle at 15% 10%, rgba(16,185,129,.18), transparent 30%),
+    radial-gradient(circle at 85% 85%, rgba(20,184,166,.20), transparent 30%),
+    linear-gradient(135deg, #f8fffb 0%, #eefaf4 48%, #f7fffb 100%) !important;
+  position: relative;
+}
+
+.auth-bg::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(4,120,87,.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(4,120,87,.045) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(circle at center, black 0%, transparent 74%);
+}
+
+.auth-card-wrap {
+  position: relative;
+  z-index: 2;
+}
+
+.auth-card {
+  border-radius: 22px !important;
+  border: 1px solid rgba(16,185,129,.18) !important;
+  box-shadow: 0 26px 80px rgba(15,23,42,.10) !important;
+}
+
+.auth-card::before {
+  content: "";
+  display: block;
+  height: 5px;
+  background: linear-gradient(90deg, #047857, #10b981, #34d399);
+}
+
+.auth-badge {
+  background: #ecfdf5 !important;
+  color: #047857 !important;
+  border: 1px solid #bbf7d0 !important;
+  box-shadow: none !important;
+}
+
+.auth-orb,
+.auth-floating-items,
+.float-item {
+  display: none !important;
+}
+
+.auth-visual-layer {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.visual-blob {
+  position: absolute;
+  border-radius: 999px;
+  opacity: .75;
+}
+
+.visual-blob-a {
+  width: 360px;
+  height: 360px;
+  left: -120px;
+  top: -110px;
+  background: radial-gradient(circle, rgba(16,185,129,.20), transparent 68%);
+}
+
+.visual-blob-b {
+  width: 430px;
+  height: 430px;
+  right: -150px;
+  bottom: -160px;
+  background: radial-gradient(circle, rgba(20,184,166,.22), transparent 68%);
+}
+
+.visual-blob-c {
+  width: 260px;
+  height: 260px;
+  right: 18%;
+  top: 20%;
+  background: radial-gradient(circle, rgba(4,120,87,.08), transparent 70%);
+}
+
+.visual-chip {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  padding: .72rem .9rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,.82);
+  border: 1px solid rgba(16,185,129,.22);
+  color: #047857;
+  box-shadow: 0 18px 45px rgba(15,23,42,.08);
+  backdrop-filter: blur(10px);
+  
+}
+
+.visual-chip b {
+  font-size: .78rem;
+  color: #065f46;
+}
+
+.chip-key { left: 18%; top: 24%; animation-delay: .1s; }
+.chip-id { left: 18%; bottom: 22%; animation-delay: 1.4s; }
+.chip-bag { right: 18%; top: 25%; animation-delay: 2.2s; }
+.chip-search { right: 19%; bottom: 20%; animation-delay: 3.1s; }
+
+@keyframes gentleFloat {
+  0%,100% { transform: translateY(0); }
+  50% { transform: translateY(-14px); }
+}
+
+.auth-card input {
+  background: #ffffff !important;
+  border: 1px solid #d7e7de !important;
+  box-shadow: none !important;
+}
+
+.auth-card input:focus {
+  border-color: #059669 !important;
+  box-shadow: 0 0 0 4px rgba(16,185,129,.12) !important;
+}
+
+.auth-card button[type="submit"] {
+  box-shadow: 0 12px 25px rgba(4,120,87,.22) !important;
+}
+
+@media (max-width: 900px) {
+  .visual-chip { opacity: .30;  }
+  .chip-key { left: 4%; top: 18%; }
+  .chip-id { left: 5%; bottom: 16%; }
+  .chip-bag { right: 4%; top: 20%; }
+  .chip-search { right: 5%; bottom: 16%; }
+}
+
+
+/* FINAL FIX: keep login logo static and natural */
+.login-logo,
+.auth-logo,
+.logo-img,
+.login-card img,
+.auth-card img {
+  animation: none !important;
+  transform: none !important;
+  transition: none !important;
+  filter: none !important;
+}
