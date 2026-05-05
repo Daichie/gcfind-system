@@ -1,0 +1,1081 @@
+/* GCFind - Supabase-connected version
+   Requires:
+   1) supabase-js CDN loaded before this file
+   2) supabase-config.js creating window.supabaseClient
+*/
+
+function $(selector, root = document) { return root.querySelector(selector); }
+function $all(selector, root = document) { return Array.from(root.querySelectorAll(selector)); }
+
+const STORAGE = {
+  role: 'gcfind.role',
+  sessionUser: 'gcfind.user'
+};
+
+const MOCK_ITEMS = [];
+
+const SUPABASE_CONFIG = window.GCFIND_SUPABASE || null;
+const SUPABASE_READY = Boolean(
+  window.supabaseClient &&
+  SUPABASE_CONFIG &&
+  SUPABASE_CONFIG.url &&
+  SUPABASE_CONFIG.anonKey &&
+  !String(SUPABASE_CONFIG.url).includes('YOUR_') &&
+  !String(SUPABASE_CONFIG.anonKey).includes('YOUR_')
+);
+
+const sb = window.supabaseClient || null;
+
+const APP_STATE = {
+  itemsPage: 1,
+  itemsPerPage: 6,
+  adminReportsPage: 1,
+  adminClaimsPage: 1,
+  adminLogsPage: 1,
+  adminPerPage: 6,
+  systemAdminUsersPage: 1,
+  systemAdminLogsPage: 1,
+  systemAdminPerPage: 6,
+  adminTab: 'reports',
+  threads: [],
+  activeThreadKey: null,
+  charts: {},
+  realtimeInitialized: false
+};
+
+/* ===================== LOCAL SESSION CACHE ===================== */
+function setRole(role) { localStorage.setItem(STORAGE.role, role); }
+function getRole() { return localStorage.getItem(STORAGE.role) || ''; }
+function setUser(user) { localStorage.setItem(STORAGE.sessionUser, JSON.stringify(user)); }
+function getUser() {
+  try { return JSON.parse(localStorage.getItem(STORAGE.sessionUser) || 'null'); }
+  catch { return null; }
+}
+function clearSession() {
+  localStorage.removeItem(STORAGE.role);
+  localStorage.removeItem(STORAGE.sessionUser);
+}
+
+/* ===================== HELPERS ===================== */
+function createId(prefix) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function escapeHtml(text) {
+  return String(text ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function friendlyRole(role) {
+  const map = {
+    student: 'Student',
+    faculty_staff: 'Faculty / Staff',
+    admin: 'Security / Lost & Found Office',
+    system_admin: 'System Administrator'
+  };
+  return map[role] || role || 'Guest';
+}
+
+function ensureLoadingOverlay() {
+  if ($('#loadingOverlay')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'loadingOverlay';
+  overlay.className = 'loading-overlay hidden';
+  overlay.innerHTML = `<div class="loading-box"><div class="spinner" aria-hidden="true"></div><p>Loading, please wait...</p></div>`;
+  document.body.appendChild(overlay);
+}
+function showLoading(text = 'Loading, please wait...') {
+  ensureLoadingOverlay();
+  const overlay = $('#loadingOverlay');
+  overlay.classList.remove('hidden');
+  const p = overlay.querySelector('p');
+  if (p) p.textContent = text;
+  const spinner = overlay.querySelector('.spinner');
+  if (spinner) {
+    spinner.style.animation = 'none';
+    void spinner.offsetWidth;
+    spinner.style.animation = 'gcfindSpinnerRotate 0.75s linear infinite';
+  }
+}
+function hideLoading() { $('#loadingOverlay')?.classList.add('hidden'); }
+
+function isAuthSurface() {
+  const path = String(window.location.pathname || '').toLowerCase();
+  return /login|register/.test(path);
+}
+
+function ensureNoticeLayer() {
+  if (!document.getElementById('noticeLayer')) {
+    const layer = document.createElement('div');
+    layer.id = 'noticeLayer';
+    layer.className = 'notice-layer';
+    document.body.appendChild(layer);
+  }
+  if (!document.getElementById('confirmOverlay')) {
+    const wrap = document.createElement('div');
+    wrap.id = 'confirmOverlay';
+    wrap.className = 'confirm-overlay hidden';
+    document.body.appendChild(wrap);
+  }
+}
+
+function showNotice(message, type = 'info', opts = {}) {
+  ensureNoticeLayer();
+  const layer = document.getElementById('noticeLayer');
+  const position = opts.position || (isAuthSurface() ? 'center' : 'top-right');
+  layer.className = `notice-layer notice-${position}`;
+
+  const item = document.createElement('div');
+  item.className = `notice notice-${type}`;
+  item.innerHTML = `
+    <div class="notice-icon">${type === 'success' ? '✓' : type === 'error' ? '!' : 'i'}</div>
+    <div class="notice-text">${escapeHtml(message)}</div>
+  `;
+
+  layer.appendChild(item);
+  requestAnimationFrame(() => item.classList.add('show'));
+
+  const duration = opts.duration ?? (position === 'center' ? 2200 : 3000);
+  setTimeout(() => {
+    item.classList.remove('show');
+    setTimeout(() => item.remove(), 220);
+  }, duration);
+}
+
+function showError(message, opts = {}) { showNotice(message, 'error', opts); }
+function showSuccess(message, opts = {}) { showNotice(message, 'success', opts); }
+function showInfo(message, opts = {}) { showNotice(message, 'info', opts); }
+
+function appConfirm(message) {
+  ensureNoticeLayer();
+  return new Promise((resolve) => {
+    const overlay = document.getElementById('confirmOverlay');
+    if (overlay.parentElement !== document.body) document.body.appendChild(overlay);
+
+    overlay.innerHTML = `
+      <div class="confirm-backdrop"></div>
+      <div class="confirm-card">
+        <div class="confirm-title">Please confirm</div>
+        <div class="confirm-message">${escapeHtml(message)}</div>
+        <div class="confirm-actions">
+          <button type="button" class="confirm-btn secondary" data-confirm-cancel>Cancel</button>
+          <button type="button" class="confirm-btn primary" data-confirm-ok>Confirm</button>
+        </div>
+      </div>
+    `;
+
+    overlay.classList.remove('hidden');
+    overlay.classList.add('is-open');
+
+    if (typeof gcfindOpenModalFixed === 'function') {
+      gcfindOpenModalFixed(overlay);
+      overlay.style.zIndex = '2147483000';
+    } else {
+      Object.assign(overlay.style, {
+        position: 'fixed',
+        inset: '0',
+        width: '100vw',
+        height: '100vh',
+        zIndex: '2147483000',
+        display: 'block',
+        background: 'rgba(15, 23, 42, 0.34)'
+      });
+      document.documentElement.style.overflow = 'hidden';
+      document.body.style.overflow = 'hidden';
+    }
+
+    const close = (result) => {
+      if (typeof gcfindCloseModalFixed === 'function') {
+        gcfindCloseModalFixed(overlay);
+      } else {
+        overlay.classList.add('hidden');
+        overlay.classList.remove('is-open');
+        overlay.removeAttribute('style');
+        document.documentElement.style.overflow = '';
+        document.body.style.overflow = '';
+      }
+      overlay.innerHTML = '';
+      resolve(result);
+    };
+
+    overlay.querySelector('[data-confirm-cancel]')?.addEventListener('click', () => close(false));
+    overlay.querySelector('[data-confirm-ok]')?.addEventListener('click', () => close(true));
+    overlay.querySelector('.confirm-backdrop')?.addEventListener('click', () => close(false));
+  });
+}
+
+function setFieldError(input, message) {
+  if (!input) return;
+  const help = document.querySelector(`[data-error-for="${input.id}"]`);
+  if (help) help.textContent = message || '';
+  if (message) input.classList.add('ring-2', 'ring-red-500');
+  else input.classList.remove('ring-2', 'ring-red-500');
+}
+
+function formatDateTime(dateString) {
+  try { return new Date(dateString).toLocaleString(); }
+  catch { return dateString || ''; }
+}
+
+function statusPill(status) {
+  const map = {
+    Pending: 'bg-amber-50 text-amber-700 ring-amber-200',
+    Approved: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+    Rejected: 'bg-red-50 text-red-700 ring-red-200',
+    Claimed: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+    Returned: 'bg-slate-100 text-slate-700 ring-slate-200'
+  };
+  const cls = map[status] || map.Pending;
+  return `<span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${cls}">${escapeHtml(status)}</span>`;
+}
+
+function typePill(type) {
+  const cls = type === 'Found'
+    ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+    : 'bg-amber-50 text-amber-700 ring-amber-200';
+  return `<span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${cls}">${escapeHtml(type)}</span>`;
+}
+
+function requireSupabase() {
+  if (!SUPABASE_READY || !sb) {
+    console.error('Supabase is not ready. Check supabase-config.js and script tags.');
+    showError('Supabase is not ready yet. Please check your configuration.', { position: isAuthSurface() ? 'center' : 'top-right' });
+    return false;
+  }
+  return true;
+}
+
+
+function paginate(items, page, perPage) {
+  const total = items.length;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const start = (safePage - 1) * perPage;
+  return { page: safePage, total, totalPages, perPage, items: items.slice(start, start + perPage) };
+}
+
+function renderPagination(containerId, pageData, onPrev, onNext) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (!pageData || !pageData.total) { el.innerHTML = ''; return; }
+  const start = (pageData.page - 1) * pageData.perPage + 1;
+  const end = Math.min(pageData.page * pageData.perPage, pageData.total);
+  el.innerHTML = `
+    <div class="pagination">
+      <div class="text-sm text-slate-600">Showing ${start} to ${end} of ${pageData.total}</div>
+      <div class="pagination-controls">
+        <button class="pagination-btn" ${pageData.page <= 1 ? 'disabled' : ''} data-page-prev="${containerId}">Previous</button>
+        <span class="text-sm font-semibold text-slate-700">Page ${pageData.page} of ${pageData.totalPages}</span>
+        <button class="pagination-btn" ${pageData.page >= pageData.totalPages ? 'disabled' : ''} data-page-next="${containerId}">Next</button>
+      </div>
+    </div>`;
+  el.querySelector('[data-page-prev]')?.addEventListener('click', onPrev);
+  el.querySelector('[data-page-next]')?.addEventListener('click', onNext);
+}
+
+function setRing(el, value, total, color) {
+  if (!el) return;
+  const pct = total ? Math.round((value / total) * 100) : 0;
+  el.style.setProperty('--p', `${Math.max(0, Math.min(100, pct)) * 3.6}deg`);
+  el.style.setProperty('--ring', color || '#2563eb');
+  el.setAttribute('data-value', `${pct}%`);
+}
+
+
+/* ===================== SUPABASE DATA HELPERS ===================== */
+async function getAuthUser() {
+  if (!requireSupabase()) return null;
+  const { data, error } = await sb.auth.getUser();
+  if (error) return null;
+  return data.user || null;
+}
+
+async function fetchProfileById(id) {
+  if (!requireSupabase() || !id) return null;
+  const { data, error } = await sb
+    .from('profiles')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (error) {
+    console.error('fetchProfileById error:', error);
+    return null;
+  }
+
+  return data;
+}
+
+async function fetchProfileMapByIds(ids = []) {
+  if (!requireSupabase() || !ids.length) return {};
+  const uniqueIds = [...new Set(ids.filter(Boolean))];
+  if (!uniqueIds.length) return {};
+
+  const { data, error } = await sb
+    .from('profiles')
+    .select('*')
+    .in('id', uniqueIds);
+
+  if (error || !data) return {};
+
+  return data.reduce((acc, p) => {
+    acc[p.id] = p;
+    return acc;
+  }, {});
+}
+
+async function createAuditLog(action, targetType = '', targetId = '', details = '') {
+  if (!SUPABASE_READY || !sb) return;
+  const authUser = await getAuthUser();
+  if (!authUser) return;
+
+  const { error } = await sb.from('audit_logs').insert({
+    actor_id: authUser.id,
+    action,
+    target_type: targetType,
+    target_id: targetId || null,
+    details
+  });
+
+  if (error) {
+    console.error('audit_logs insert error:', error);
+  }
+}
+
+async function uploadImageToSupabase(file) {
+  const user = await getAuthUser();
+  if (!user || !file) return null;
+
+  const fileExt = file.name.split('.').pop();
+  const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${fileExt}`;
+
+  const { error } = await sb.storage
+    .from('item-images')
+    .upload(fileName, file, { upsert: true });
+
+  if (error) throw error;
+
+  const { data } = sb.storage
+    .from('item-images')
+    .getPublicUrl(fileName);
+
+  return data.publicUrl;
+}
+
+async function syncSessionFromSupabase() {
+  if (!SUPABASE_READY || !sb) return;
+
+  const user = await getAuthUser();
+  if (!user) {
+    clearSession();
+    return;
+  }
+
+  const profile = await fetchProfileById(user.id);
+
+  const uiRole = (profile?.role === 'admin' || profile?.role === 'system_admin') ? 'admin' : 'user';
+
+  setRole(uiRole);
+  setUser({
+    id: user.id,
+    name: profile?.full_name || user.email,
+    email: user.email,
+    role: profile?.role || 'student',
+    department: profile?.department || 'General'
+  });
+}
+
+/* ===================== PAGE GUARDS ===================== */
+function guardPage() {
+  const required = document.body?.dataset.requiresRole || '';
+  const requiredUserType = document.body?.dataset.requiresUserType || '';
+  const role = getRole();
+  const user = getUser();
+
+  if (required && role !== required) {
+    window.location.replace('login.html');
+    return;
+  }
+
+  if (requiredUserType) {
+    const allowed = requiredUserType.split('|').map(v => v.trim()).filter(Boolean);
+    const current = user?.role || '';
+    if (!allowed.includes(current)) {
+      window.location.replace('dashboard.html');
+    }
+  }
+}
+
+function wireLogoutButtons() {
+  $all('[data-action="logout"]').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (SUPABASE_READY && sb) {
+        await sb.auth.signOut();
+      }
+      clearSession();
+      window.location.href = 'login.html';
+    });
+  });
+}
+
+function updateNavProfile() {
+  const u = getUser();
+  if ($('#navUserName')) $('#navUserName').textContent = u?.name || 'User';
+  if ($('#navRoleBadge')) $('#navRoleBadge').textContent = friendlyRole(u?.role || getRole()).toUpperCase();
+  if ($('#navRoleSubtext')) $('#navRoleSubtext').textContent = u?.department || friendlyRole(u?.role || getRole());
+
+  const isFaculty = u?.role === 'faculty_staff';
+  const isAdmin = ['admin','system_admin'].includes(u?.role);
+  const isSystemAdmin = u?.role === 'system_admin';
+  $all('[data-faculty-only]').forEach(el => el.classList.toggle('hidden', !isFaculty));
+  $all('[data-student-only]').forEach(el => el.classList.toggle('hidden', u?.role !== 'student'));
+  $all('[data-admin-only]').forEach(el => el.classList.toggle('hidden', !isAdmin));
+  $all('[data-system-admin-only]').forEach(el => el.classList.toggle('hidden', !isSystemAdmin));
+}
+
+
+
+
+function getDashboardHrefForRole(role) {
+  if (role === 'system_admin') return 'system-admin.html';
+  if (role === 'admin') return 'admin.html';
+  return 'dashboard.html';
+}
+
+function syncRoleAwareNav() {
+  const user = getUser();
+  const role = user?.role || '';
+  const dashboardHref = getDashboardHrefForRole(role);
+  const page = document.body?.dataset.page || '';
+
+  // Keep page-specific home buttons stable on their own dashboards.
+  // Only use role-aware home targets on shared pages like messages, report, and details.
+  if (['messages', 'report', 'details'].includes(page)) {
+    document.querySelectorAll('[data-home-link]').forEach(el => { el.setAttribute('href', dashboardHref); });
+  }
+
+  document.querySelectorAll('[data-faculty-only]').forEach(el => el.classList.toggle('hidden', role !== 'faculty_staff'));
+  document.querySelectorAll('[data-admin-only]').forEach(el => el.classList.toggle('hidden', !['admin','system_admin'].includes(role)));
+  document.querySelectorAll('[data-system-admin-only]').forEach(el => el.classList.toggle('hidden', role !== 'system_admin'));
+}
+
+async function updateMessageBadges() { return; }
+
+async function markActiveThreadRead(active) { return; }
+function applyActiveNav() {
+  const page = document.body?.dataset.page || '';
+  const user = getUser();
+  document.querySelectorAll('[data-nav]').forEach((el) => {
+    el.classList.toggle('active', el.dataset.nav === page);
+  });
+  document.querySelectorAll('[data-admin-only]').forEach(el => el.classList.toggle('hidden', !['admin','system_admin'].includes(user?.role)));
+  document.querySelectorAll('[data-system-admin-only]').forEach(el => el.classList.toggle('hidden', user?.role !== 'system_admin'));
+}
+
+
+function initPageTransitions() {
+  document.body.classList.add('page-ready');
+  document.querySelectorAll('a[href]').forEach((link) => {
+    const href = link.getAttribute('href') || '';
+    if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('javascript:')) return;
+    if (link.hasAttribute('data-no-transition')) return;
+    link.addEventListener('click', (e) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || link.target === '_blank') return;
+      const url = new URL(link.href, window.location.href);
+      if (url.origin !== window.location.origin) return;
+      if (url.pathname === window.location.pathname && url.search === window.location.search && url.hash === window.location.hash) return;
+      e.preventDefault();
+      document.body.classList.add('page-exit');
+      setTimeout(() => { window.location.href = link.href; }, 180);
+    });
+  });
+}
+
+/* ===================== AUTH ===================== */
+
+
+
+/* ===================== REALTIME REFRESH v2.8 ===================== */
+function initRealtimeRefresh() {
+  if (!SUPABASE_READY || !sb) return;
+  if (APP_STATE.realtimeInitialized) return;
+  APP_STATE.realtimeInitialized = true;
+  try {
+    sb.channel('gcfind-live-refresh')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'item_reports' }, async () => {
+        if (document.getElementById('itemsGrid')) await initDashboard();
+        if (typeof loadUserClaimNotifications === 'function') await loadUserClaimNotifications();
+        if (typeof refreshGlobalNotifications === 'function') await refreshGlobalNotifications();
+        if (typeof renderStaffPanel === 'function' && document.getElementById('staffPendingReports')) await renderStaffPanel();
+        if (document.getElementById('adminReportsBody')) {
+          await renderAdminReports();
+          if (typeof renderAdminAnalyticsCharts === 'function') await renderAdminAnalyticsCharts();
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'claim_requests' }, async () => {
+        if (typeof loadUserClaimNotifications === 'function') await loadUserClaimNotifications();
+        if (typeof refreshGlobalNotifications === 'function') await refreshGlobalNotifications();
+        if (typeof renderStaffPanel === 'function' && document.getElementById('staffPendingClaims')) await renderStaffPanel();
+        if (document.getElementById('adminClaimsBody')) await renderAdminClaims();
+        if (typeof renderAdminAnalyticsCharts === 'function') await renderAdminAnalyticsCharts();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'audit_logs' }, async () => {
+        if (document.getElementById('adminLogsBody')) await renderAdminLogs();
+        if (document.getElementById('systemAdminLogsBody')) await renderSystemAdmin();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, async () => {
+        if (typeof refreshGlobalNotifications === 'function') await refreshGlobalNotifications();
+        if (typeof loadUserClaimNotifications === 'function') await loadUserClaimNotifications();
+        if (typeof renderAdminTicketNotifications === 'function' && document.getElementById('adminTicketNotifications')) await renderAdminTicketNotifications();
+        if (typeof renderSystemAdmin === 'function' && document.getElementById('systemAdminDashboard') || document.getElementById('systemAdminMount') || document.getElementById('systemAdminUsersBody')) await renderSystemAdmin();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'request_tickets' }, async () => {
+        if (typeof refreshGlobalNotifications === 'function') await refreshGlobalNotifications();
+        if (typeof renderAdminTicketNotifications === 'function' && document.getElementById('adminTicketNotifications')) await renderAdminTicketNotifications();
+        if (typeof renderSystemAdmin === 'function' && document.getElementById('systemAdminDashboard') || document.getElementById('systemAdminMount') || document.getElementById('systemAdminUsersBody')) await renderSystemAdmin();
+      })
+      .subscribe();
+  } catch (err) {
+    console.warn('Realtime refresh skipped:', err);
+  }
+}
+
+/* ===================== v2.8.23 GLOBAL NOTIFICATION DROPDOWN + PASSWORD TOGGLES ===================== */
+async function getCurrentNotificationScope() {
+  const authUser = await getAuthUser();
+  const cachedUser = (typeof getUser === 'function' ? getUser() : {}) || {};
+  const uid = authUser?.id || cachedUser?.id || null;
+  const email = String(authUser?.email || cachedUser?.email || '').toLowerCase();
+  const role = String(cachedUser?.role || '').trim();
+  return { uid, email, role };
+}
+
+function normalizeNotificationRow(n = {}) {
+  return {
+    id: n.id,
+    title: n.title || n.subject || 'Notification',
+    message: n.message || n.body || n.content || n.description || '',
+    type: n.type || n.notification_type || 'info',
+    is_read: Boolean(n.is_read ?? n.read ?? false),
+    created_at: n.created_at || n.createdAt || n.date_created || new Date().toISOString(),
+    raw: n
+  };
+}
+
+
+async function fetchStaffPendingAlerts(limit = 20) {
+  if (!requireSupabase()) return [];
+  const scope = await getCurrentNotificationScope();
+  if (String(scope.role || '') !== 'faculty_staff') return [];
+
+  const alerts = [];
+
+  try {
+    const { data: reports, error } = await sb
+      .from('item_reports')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(80);
+
+    if (!error) {
+      for (const r of (reports || []).filter(row => String(row.status || '').toLowerCase() === 'pending').slice(0, limit)) {
+        alerts.push({
+          id: `staff-report-${r.id}`,
+          title: 'New Pending Report',
+          message: `${r.item_name || 'Item report'} needs staff verification${r.location ? ` at ${r.location}` : ''}.`,
+          type: 'report',
+          is_read: false,
+          created_at: r.created_at || new Date().toISOString(),
+          synthetic: true,
+          raw: r
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('Unable to create staff report alerts:', err.message);
+  }
+
+  try {
+    const { data: claims, error } = await sb
+      .from('claim_requests')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(80);
+
+    if (!error) {
+      for (const c of (claims || []).filter(row => String(row.status || '').toLowerCase() === 'pending').slice(0, limit)) {
+        alerts.push({
+          id: `staff-claim-${c.id}`,
+          title: 'New Claim Request',
+          message: `${'A user'} submitted a claim request for verification.`,
+          type: 'claim',
+          is_read: false,
+          created_at: c.created_at || new Date().toISOString(),
+          synthetic: true,
+          raw: c
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('Unable to create staff claim alerts:', err.message);
+  }
+
+  const readAlertIds = JSON.parse(localStorage.getItem('gcfind_staff_read_alerts') || '[]');
+  const deletedAlertIds = new Set(getDeletedStaffNotificationIds().map(String));
+  return alerts
+    .filter(a => !deletedAlertIds.has(String(a.id)))
+    .map(a => ({ ...a, is_read: readAlertIds.includes(String(a.id)) }))
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .slice(0, limit);
+}
+
+
+async function fetchStudentClaimAlerts(limit = 20) {
+  if (!requireSupabase()) return [];
+  const scope = await getCurrentNotificationScope();
+  if (String(scope.role || '') !== 'student') return [];
+
+  const alerts = [];
+  try {
+    let query = sb
+      .from('claim_requests')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(80);
+
+    if (scope.uid) query = query.eq('claimant_id', scope.uid);
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    for (const c of (data || []).slice(0, limit)) {
+      const status = String(c.status || 'Pending');
+      alerts.push({
+        id: `student-claim-${c.id}-${status}`,
+        title: 'Claim Request Update',
+        message: status.toLowerCase() === 'pending'
+          ? 'Your claim request is still pending review by the Security / Lost & Found Office.'
+          : `Your claim request status is now ${status}.`,
+        type: 'claim',
+        is_read: false,
+        created_at: c.created_at || new Date().toISOString(),
+        synthetic: true,
+        raw: c
+      });
+    }
+  } catch (err) {
+    console.warn('Unable to create student claim alerts:', err.message);
+  }
+
+  const readAlertIds = JSON.parse(localStorage.getItem('gcfind_student_read_claim_alerts') || '[]');
+  const deletedAlertIds = new Set(getDeletedStudentNotificationIds().map(String));
+  return alerts
+    .filter(a => !deletedAlertIds.has(String(a.id)))
+    .map(a => ({ ...a, is_read: readAlertIds.includes(String(a.id)) }))
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .slice(0, limit);
+}
+
+
+async function fetchStudentReportAlerts(limit = 20) {
+  if (!requireSupabase()) return [];
+  const scope = await getCurrentNotificationScope();
+  if (String(scope.role || '') !== 'student') return [];
+
+  const alerts = [];
+  try {
+    let query = sb
+      .from('item_reports')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(80);
+
+    if (scope.uid) query = query.eq('user_id', scope.uid);
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    for (const r of (data || []).slice(0, limit)) {
+      const status = String(r.status || 'Pending');
+      const statusLower = status.toLowerCase();
+      alerts.push({
+        id: `student-report-${r.id}-${status}`,
+        title: 'Report Status Update',
+        message: statusLower === 'pending'
+          ? `Your ${r.type || 'item'} report${r.item_name ? ` for ${r.item_name}` : ''} is pending review.`
+          : `Your ${r.type || 'item'} report${r.item_name ? ` for ${r.item_name}` : ''} is now ${status}.`,
+        type: 'report',
+        is_read: false,
+        created_at: r.created_at || new Date().toISOString(),
+        synthetic: true,
+        raw: r
+      });
+    }
+  } catch (err) {
+    console.warn('Unable to create student report alerts:', err.message);
+  }
+
+  const readAlertIds = JSON.parse(localStorage.getItem('gcfind_student_read_report_alerts') || '[]');
+  const deletedAlertIds = new Set(getDeletedStudentNotificationIds().map(String));
+  return alerts
+    .filter(a => !deletedAlertIds.has(String(a.id)))
+    .map(a => ({ ...a, is_read: readAlertIds.includes(String(a.id)) }))
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .slice(0, limit);
+}
+
+
+
+
+function getDeletedStaffNotificationIds() {
+  try { return JSON.parse(localStorage.getItem('gcfind_deleted_staff_notifications') || '[]'); }
+  catch (_) { return []; }
+}
+function deleteStaffNotificationLocally(notificationId) {
+  if (!notificationId) return;
+  const list = getDeletedStaffNotificationIds();
+  const id = String(notificationId);
+  if (!list.includes(id)) {
+    list.push(id);
+    localStorage.setItem('gcfind_deleted_staff_notifications', JSON.stringify(list));
+  }
+}
+
+
+function getPanelHiddenNotificationIds() {
+  try { return JSON.parse(localStorage.getItem('gcfind_hidden_notification_ids') || '[]').map(String); }
+  catch (_) { return []; }
+}
+function hidePanelNotificationLocally(id) {
+  if (!id) return;
+  const list = getPanelHiddenNotificationIds();
+  if (!list.includes(String(id))) list.push(String(id));
+  localStorage.setItem('gcfind_hidden_notification_ids', JSON.stringify(list));
+}
+
+function getHiddenNotificationIds() {
+  try { return JSON.parse(localStorage.getItem('gcfind_hidden_notification_ids') || '[]'); }
+  catch (_) { return []; }
+}
+function getDeletedStudentNotificationIds() {
+  try { return JSON.parse(localStorage.getItem('gcfind_deleted_student_notifications') || '[]'); }
+  catch (_) { return []; }
+}
+function deleteStudentNotificationLocally(notificationId) {
+  if (!notificationId) return;
+  const list = getDeletedStudentNotificationIds();
+  const id = String(notificationId);
+  if (!list.includes(id)) {
+    list.push(id);
+    localStorage.setItem('gcfind_deleted_student_notifications', JSON.stringify(list));
+  }
+}
+function hideNotificationLocally(notificationId) {
+  if (!notificationId) return;
+  const list = getHiddenNotificationIds();
+  if (!list.includes(String(notificationId))) list.push(String(notificationId));
+  localStorage.setItem('gcfind_hidden_notification_ids', JSON.stringify(list));
+}
+
+async function fetchCurrentUserNotifications(limit = 25) {
+  if (!requireSupabase()) return [];
+  const scope = await getCurrentNotificationScope();
+  if (!scope.uid && !scope.email && !scope.role) return [];
+
+  const attempts = [];
+
+  // Best path for the official GCFind schema.
+  if (scope.uid && scope.role) {
+    attempts.push(() => sb.from('notifications')
+      .select('*')
+      .or(`recipient_user_id.eq.${scope.uid},recipient_role.eq.${scope.role}`)
+      .order('created_at', { ascending: false })
+      .limit(limit));
+  }
+
+  if (scope.uid) {
+    attempts.push(() => sb.from('notifications').select('*').eq('recipient_user_id', scope.uid).order('created_at', { ascending: false }).limit(limit));
+  }
+
+  if (scope.email) {
+  }
+
+  if (scope.role) {
+    attempts.push(() => sb.from('notifications').select('*').eq('recipient_role', scope.role).order('created_at', { ascending: false }).limit(limit));
+  }
+
+  const seen = new Set();
+  const merged = [];
+
+  for (const attempt of attempts) {
+    try {
+      const { data, error } = await attempt();
+      if (error) throw error;
+      for (const row of (data || [])) {
+        if (!row?.id || seen.has(row.id)) continue;
+        seen.add(row.id);
+        merged.push(normalizeNotificationRow(row));
+      }
+    } catch (err) {
+      // Some projects may not have fallback columns. Skip those attempts safely.
+      console.warn('Notification fetch attempt skipped:', err.message);
+    }
+  }
+
+  let combined = merged;
+
+  try {
+    const staffAlerts = await fetchStaffPendingAlerts(limit);
+    const seenIds = new Set(combined.map(n => String(n.id)));
+    for (const alert of staffAlerts) {
+      if (!seenIds.has(String(alert.id))) {
+        combined.push(alert);
+        seenIds.add(String(alert.id));
+      }
+    }
+  } catch (err) {
+    console.warn('Staff pending alerts skipped:', err.message);
+  }
+
+  try {
+    const studentClaimAlerts = await fetchStudentClaimAlerts(limit);
+    const seenIds = new Set(combined.map(n => String(n.id)));
+    for (const alert of studentClaimAlerts) {
+      if (!seenIds.has(String(alert.id))) {
+        combined.push(alert);
+        seenIds.add(String(alert.id));
+      }
+    }
+  } catch (err) {
+    console.warn('Student claim alerts skipped:', err.message);
+  }
+
+  try {
+    const studentReportAlerts = await fetchStudentReportAlerts(limit);
+    const seenIds = new Set(combined.map(n => String(n.id)));
+    for (const alert of studentReportAlerts) {
+      if (!seenIds.has(String(alert.id))) {
+        combined.push(alert);
+        seenIds.add(String(alert.id));
+      }
+    }
+  } catch (err) {
+    console.warn('Student report alerts skipped:', err.message);
+  }
+
+  const hiddenIds = new Set(getHiddenNotificationIds().map(String));
+  const deletedStudentIds = new Set(getDeletedStudentNotificationIds().map(String));
+  return combined
+    .filter(n => !hiddenIds.has(String(n.id)) && !deletedStudentIds.has(String(n.id)))
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .slice(0, limit);
+}
+
+async function markCurrentNotificationRead(notificationId) {
+  if (!requireSupabase() || !notificationId) return;
+  try {
+    const { error } = await sb.from('notifications').update({ is_read: true }).eq('id', notificationId);
+    if (error) console.warn('Unable to mark notification as read:', error.message);
+  } catch (err) {
+    console.warn('Unable to mark notification as read:', err.message);
+  }
+}
+
+async function deleteCurrentNotification(notificationId) {
+  if (!notificationId) return false;
+
+  // Always hide locally first, so UI will not show it again even if RLS blocks DB delete.
+  hidePanelNotificationLocally(notificationId);
+  if (typeof hideNotificationLocally === 'function') hideNotificationLocally(notificationId);
+
+  if (!requireSupabase()) return true;
+
+  try {
+    const { error } = await sb.from('notifications').delete().eq('id', notificationId);
+    if (error) console.warn('Notification DB delete blocked, local hide applied:', error.message);
+    return true;
+  } catch (err) {
+    console.warn('Notification delete fallback applied:', err.message);
+    return true;
+  }
+}function notificationDropdownItem(n) {
+  const id = String(n.id || '');
+  const syntheticType = id.startsWith('student-claim-')
+    ? 'student_claim'
+    : id.startsWith('student-report-')
+      ? 'student_report'
+      : 'staff';
+
+  return `
+    <article class="gc-notif-item ${n.is_read ? 'is-read' : 'is-unread'}">
+      <div class="gc-notif-main">
+        <div class="gc-notif-title">${escapeHtml(n.title || 'Notification')}</div>
+        <div class="gc-notif-message">${escapeHtml(n.message || '')}</div>
+        <div class="gc-notif-date">${formatDateTime(n.created_at)}</div>
+      </div>
+      <div class="gc-notif-actions">
+        ${n.synthetic
+          ? `${!n.is_read ? `<button type="button" data-synthetic-notif-read="${escapeHtml(n.id)}" data-synthetic-type="${syntheticType}">Mark read</button>` : ''}<button type="button" class="danger" data-synthetic-notif-delete="${escapeHtml(n.id)}" data-synthetic-type="${syntheticType}">Delete</button>`
+          : `${!n.is_read ? `<button type="button" data-global-notif-read="${escapeHtml(n.id)}">Mark read</button>` : ''}<button type="button" class="danger" data-global-notif-delete="${escapeHtml(n.id)}">Delete</button>`}
+      </div>
+    </article>`;
+}
+async function refreshGlobalNotifications() {
+  const dropdown = document.getElementById('globalNotificationDropdown');
+  const list = document.getElementById('globalNotificationList');
+  const badge = document.getElementById('globalNotificationBadge');
+  if (!dropdown || !list || !badge) return;
+  const notifications = await fetchCurrentUserNotifications(30);
+  const unread = notifications.filter(n => !n.is_read).length;
+  badge.textContent = unread > 99 ? '99+' : String(unread);
+  badge.classList.toggle('hidden', unread === 0);
+  list.innerHTML = notifications.length ? notifications.map(notificationDropdownItem).join('') : `<div class="gc-notif-empty">No notifications yet.</div>`;
+  list.querySelectorAll('[data-global-notif-read]').forEach(btn => btn.addEventListener('click', async () => {
+    await markCurrentNotificationRead(btn.dataset.globalNotifRead);
+    await refreshGlobalNotifications();
+    if (typeof loadUserClaimNotifications === 'function') await loadUserClaimNotifications();
+  }));
+  list.querySelectorAll('[data-synthetic-notif-read]').forEach(btn => btn.addEventListener('click', async () => {
+    const key = btn.dataset.syntheticType === 'student_claim'
+      ? 'gcfind_student_read_claim_alerts'
+      : btn.dataset.syntheticType === 'student_report'
+        ? 'gcfind_student_read_report_alerts'
+        : 'gcfind_staff_read_alerts';
+    const readIds = JSON.parse(localStorage.getItem(key) || '[]');
+    const id = btn.dataset.syntheticNotifRead;
+    if (!readIds.includes(id)) readIds.push(id);
+    localStorage.setItem(key, JSON.stringify(readIds));
+    await refreshGlobalNotifications();
+    if (typeof renderStaffPanel === 'function') await renderStaffPanel();
+    if (typeof loadUserClaimNotifications === 'function') await loadUserClaimNotifications();
+    showSuccess('Notification marked as read.', { position: 'top-right' });
+  }));
+  list.querySelectorAll('[data-synthetic-notif-delete]').forEach(btn => btn.addEventListener('click', async () => {
+    const ok = await appConfirm('Delete this notification?');
+    if (!ok) return;
+    const id = btn.dataset.syntheticNotifDelete;
+    if (btn.dataset.syntheticType === 'student_claim' || btn.dataset.syntheticType === 'student_report') {
+      deleteStudentNotificationLocally(id);
+    } else {
+      if (typeof deleteStaffNotificationLocally === 'function') deleteStaffNotificationLocally(id);
+    }
+    btn.closest('.gc-notif-item')?.remove();
+    await refreshGlobalNotifications();
+    if (typeof renderStaffPanel === 'function') await renderStaffPanel();
+    if (typeof loadUserClaimNotifications === 'function') await loadUserClaimNotifications();
+    showSuccess('Notification deleted.', { position: 'top-right' });
+  }));
+  list.querySelectorAll('[data-global-notif-delete]').forEach(btn => btn.addEventListener('click', async () => {
+    const ok = await appConfirm('Delete this notification?');
+    if (!ok) return;
+    const deleted = await deleteCurrentNotification(btn.dataset.globalNotifDelete);
+    if (deleted) {
+      btn.closest('.gc-notif-item')?.remove();
+    }
+    await refreshGlobalNotifications();
+    if (typeof loadUserClaimNotifications === 'function') await loadUserClaimNotifications();
+  }));
+}
+
+function initGlobalNotificationDropdown() {
+  if (document.getElementById('globalNotificationWrap')) return;
+  const user = getUser();
+  if (!user) return;
+
+  // Bell notification is only for Student and Faculty/Staff.
+  // CSSU/Admin and System Administrator already have panel-based notification areas.
+  const allowedBellRoles = ['student', 'faculty_staff'];
+  const role = String(user.role || '').trim();
+  if (!allowedBellRoles.includes(role)) return;
+
+  const logoutBtn = document.querySelector('[data-action="logout"]');
+  if (!logoutBtn || !logoutBtn.parentElement) return;
+  const wrap = document.createElement('div');
+  wrap.id = 'globalNotificationWrap';
+  wrap.className = 'gc-notif-wrap';
+  wrap.innerHTML = `
+    <button type="button" id="globalNotificationButton" class="gc-notif-button" aria-expanded="false" aria-label="Notifications">
+      <i class="fa-solid fa-bell"></i><span id="globalNotificationBadge" class="gc-notif-badge hidden">0</span>
+    </button>
+    <section id="globalNotificationDropdown" class="gc-notif-dropdown hidden" aria-label="Notifications">
+      <header class="gc-notif-header"><div><div class="gc-notif-heading">Notifications</div><div class="gc-notif-subtitle">Updates for your account</div></div><button type="button" id="globalNotificationClose" class="gc-notif-close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></header>
+      <div id="globalNotificationList" class="gc-notif-list"><div class="gc-notif-empty">Loading notifications...</div></div>
+    </section>`;
+  logoutBtn.parentElement.insertBefore(wrap, logoutBtn);
+  document.getElementById('globalNotificationButton')?.addEventListener('click', async () => {
+    const dropdown = document.getElementById('globalNotificationDropdown');
+    dropdown?.classList.toggle('hidden');
+    await refreshGlobalNotifications();
+  });
+  document.getElementById('globalNotificationClose')?.addEventListener('click', () => document.getElementById('globalNotificationDropdown')?.classList.add('hidden'));
+  document.addEventListener('click', (e) => {
+    const dropdown = document.getElementById('globalNotificationDropdown');
+    const wrapEl = document.getElementById('globalNotificationWrap');
+    if (dropdown && wrapEl && !wrapEl.contains(e.target)) dropdown.classList.add('hidden');
+  });
+  refreshGlobalNotifications();
+}
+
+function initPasswordVisibilityToggles() {
+  document.querySelectorAll('input[type="password"], input[type="text"].gc-password-input').forEach(input => {
+    if (!input.id) return;
+    const parent = input.parentElement;
+    if (!parent) return;
+
+    parent.classList.add('gc-password-wrap');
+    input.classList.add('gc-password-input');
+
+    const manualToggle = parent.querySelector(`[data-toggle-password="${input.id}"]`);
+    const toggles = Array.from(parent.querySelectorAll('.gc-password-toggle'));
+
+    // If a manual page toggle exists, remove any auto-generated duplicate toggles.
+    if (manualToggle) {
+      toggles.forEach(btn => btn.remove());
+      input.dataset.passwordToggleReady = 'manual';
+      return;
+    }
+
+    // Keep only one generated toggle.
+    if (toggles.length > 1) {
+      toggles.slice(1).forEach(btn => btn.remove());
+    }
+
+    if (toggles.length === 1) {
+      input.dataset.passwordToggleReady = 'true';
+      return;
+    }
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'gc-password-toggle';
+    btn.setAttribute('aria-label', 'Show password');
+    btn.setAttribute('title', 'Show password');
+    btn.innerHTML = '<i class="fa-regular fa-eye"></i>';
+    btn.addEventListener('click', () => {
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+      btn.setAttribute('title', show ? 'Hide password' : 'Show password');
+      btn.innerHTML = show ? '<i class="fa-regular fa-eye-slash"></i>' : '<i class="fa-regular fa-eye"></i>';
+      input.focus();
+    });
+    parent.appendChild(btn);
+    input.dataset.passwordToggleReady = 'true';
+  });
+}
+
+// GCFind duplicate password cleanup v2.46
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    try { initPasswordVisibilityToggles(); } catch (_) {}
+    document.querySelectorAll('.gc-password-wrap').forEach(parent => {
+      const toggles = Array.from(parent.querySelectorAll('.gc-password-toggle'));
+      if (toggles.length > 1) toggles.slice(1).forEach(btn => btn.remove());
+    });
+  }, 120);
+});
