@@ -1,1 +1,0 @@
-All roles now login from login.html. Admin-login page redirects to login.html. Claim notifications use claim_requests table.
