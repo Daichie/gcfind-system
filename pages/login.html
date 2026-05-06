@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GCFind | User Login</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = { theme: { extend: { boxShadow: { soft: "0 10px 30px rgba(15, 23, 42, 0.08)" } } } };
+    </script>
+    <link rel="stylesheet" href="../assets/css/base.css" />
+    <link rel="stylesheet" href="../assets/css/pages/auth.css" />
+    <link rel="icon" type="image/png" href="../assets/img/gcfind-logo-transparent.png" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" referrerpolicy="no-referrer" />
+  
+  <style>
+    .back-landing-wrapper {
+      position: fixed;
+      top: 18px;
+      left: 18px;
+      z-index: 9999;
+    }
+    .back-landing-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.92);
+      color: #0f8f46;
+      font-weight: 700;
+      text-decoration: none;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.10);
+      border: 1px solid rgba(15, 143, 70, 0.18);
+      transition: transform 0.2s ease, background 0.2s ease;
+    }
+    .back-landing-link:hover {
+      transform: translateY(-2px);
+      background: #ffffff;
+    }
+    @media (max-width: 540px) {
+      .back-landing-wrapper {
+        position: static;
+        padding: 14px 14px 0;
+      }
+      .back-landing-link {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+  </style>
+
+</head>
+
+  <body class="min-h-screen auth-bg">
+      <div class="back-landing-wrapper">
+        <a href="../landing.html" class="back-landing-link">← Back to Landing Page</a>
+      </div>
+
+    <main class="min-h-screen grid place-items-center px-4 py-10 relative overflow-hidden">
+      <section class="w-full max-w-lg auth-card-wrap">
+        <div class="auth-orb auth-orb-one"></div>
+        <div class="auth-orb auth-orb-two"></div>
+
+        <div class="auth-card rounded-3xl bg-white/95 ring-1 ring-slate-200 overflow-hidden backdrop-blur">
+          <div class="p-8 sm:p-10">
+            <div class="flex flex-col items-center text-center">
+              <span class="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-4 py-1.5 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                <i class="fa-solid fa-building-columns"></i>
+                Gordon College
+              </span>
+
+              <img src="../assets/img/gcfind-logo-transparent.png" alt="GCFind logo" class="mt-5 h-24 w-24 shadow-sm logo-float site-logo" />
+
+              <h1 class="mt-4 text-4xl font-extrabold tracking-tight text-slate-900">GCFind</h1>
+              <p class="mt-1 text-sm text-slate-600">Lost and Found Management System</p>
+              <p class="mt-1 text-xs text-slate-500">Campus Lost and Found Portal</p>
+
+              <div class="mt-3"><span id="supabaseStatusBadge"></span></div>
+            </div>
+
+            <form id="userLoginForm" class="mt-6 space-y-4">
+              <div>
+                <label for="userEmail" class="text-sm font-semibold text-slate-700">Email</label>
+                <div class="mt-1 relative">
+                  <i class="fa-regular fa-envelope absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                  <input id="userEmail" type="email" class="w-full rounded-2xl bg-white pl-11 pr-4 py-3 text-sm ring-1 ring-slate-200 focus:ring-2 focus:ring-emerald-500" placeholder="your@gordoncollege.edu.ph" autocomplete="username" required />
+                </div>
+              </div>
+
+              <div>
+                <label for="userPassword" class="text-sm font-semibold text-slate-700">Password</label>
+                <div class="mt-1 relative">
+                  <i class="fa-solid fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                  <input id="userPassword" type="password" class="w-full rounded-2xl bg-white pl-11 pr-4 py-3 text-sm ring-1 ring-slate-200 focus:ring-2 focus:ring-emerald-500" placeholder="Enter password" autocomplete="current-password" required />
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between gap-3">
+                <p id="loginError" class="text-sm font-medium text-red-600"></p>
+                <button type="button" id="forgotPasswordLink" class="text-sm font-semibold text-emerald-700 hover:text-emerald-800 hover:underline">Forgot password?</button>
+              </div>
+
+              <button type="submit" class="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 active:scale-[.99] transition-all">
+                <i class="fa-solid fa-right-to-bracket"></i>
+                Sign In
+              </button>
+
+              <p class="text-center text-xs text-slate-500 leading-relaxed">
+                Only Gordon College students, faculty, and staff may access this system.
+              </p>
+            </form>
+          </div>
+
+          <div class="border-t border-slate-200 bg-slate-50 px-7 py-5 sm:px-8">
+            <div class="flex flex-col items-center justify-center gap-2 text-center">
+              <p class="text-sm text-slate-600">
+                Don’t have an account?
+                <a href="register.html" class="font-semibold text-emerald-600 hover:text-emerald-700 hover:underline">
+                  Create one here
+                </a>
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+
+    <div id="forgotPasswordModal" class="auth-modal-overlay hidden" aria-hidden="true">
+      <div class="auth-modal-card">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h2 class="text-xl font-extrabold text-slate-900">Forgot Password</h2>
+            <p class="mt-1 text-sm text-slate-600">Enter your registered email and we will send a password reset link.</p>
+          </div>
+          <button type="button" id="forgotPasswordClose" class="rounded-xl bg-slate-100 px-3 py-2 text-slate-600 hover:bg-slate-200" aria-label="Close">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <form id="forgotPasswordForm" class="mt-5 space-y-4">
+          <div>
+            <label for="forgotPasswordEmail" class="text-sm font-semibold text-slate-700">Email</label>
+            <div class="mt-1 relative">
+              <i class="fa-regular fa-envelope absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+              <input id="forgotPasswordEmail" type="email" class="w-full rounded-2xl bg-white pl-11 pr-4 py-3 text-sm ring-1 ring-slate-200 focus:ring-2 focus:ring-emerald-500" placeholder="your@gordoncollege.edu.ph" required />
+            </div>
+          </div>
+          <p id="forgotPasswordMessage" class="text-sm font-medium"></p>
+          <div class="flex justify-end gap-2">
+            <button type="button" id="forgotPasswordCancel" class="rounded-xl bg-white px-4 py-2 text-sm font-bold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">Cancel</button>
+            <button type="submit" class="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700">Send Reset Link</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="../supabase/supabase-config.js"></script>
+    <script src="../assets/js/modules/core.js?v=3.77"></script>
+    <script src="../assets/js/modules/auth.js"></script>
+    <script src="../assets/js/modules/items.js"></script>
+    <script src="../assets/js/modules/admin.js?v=3.76"></script>
+    <script src="../assets/js/modules/init.js"></script>
+      <script src="../assets/js/gcfind-hotfix-v260.js?v=2.60"></script>
+</body>
+</html>
