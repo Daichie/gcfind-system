@@ -352,7 +352,7 @@ async function initDetails() {
             </div>` : ''}
 
           <div class="mt-6 flex flex-col sm:flex-row gap-3">
-            <button type="button" class="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-700" id="claimBtn">Claim Item / Contact Owner</button>
+            <button type="button" class="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-700" id="claimBtn">Claim Item</button>
             <a href="dashboard.html" class="inline-flex items-center justify-center rounded-xl bg-white px-5 py-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">Back to Dashboard</a>
           </div>
         </div>
