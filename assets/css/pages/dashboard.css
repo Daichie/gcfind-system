@@ -1,0 +1,40 @@
+/* Dashboard-specific styles */
+.dashboard-shell { min-height: calc(100vh - 80px); }
+
+
+/* FINAL FIX: keep login logo static and natural */
+.login-logo,
+.auth-logo,
+.logo-img,
+.login-card img,
+.auth-card img {
+  animation: none !important;
+  transform: none !important;
+  transition: none !important;
+  filter: none !important;
+}
+
+
+/* GCFind targeted UI polish */
+@keyframes gcfindPageEnter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+body {
+  animation: gcfindPageEnter 0.35s ease-out both;
+}
+
+#searchHintBox {
+  min-height: 64px;
+}
+
+#filterLocation {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+/* Browser support for native select dropdown height is limited, but this keeps the field compact. */
+#filterLocation option {
+  line-height: 1.6;
+}
