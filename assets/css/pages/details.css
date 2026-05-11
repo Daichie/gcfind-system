@@ -1,0 +1,61 @@
+/* Item details page styles */
+.details-page .details-actions { gap: .75rem; }
+
+/* v2.8.16: keep item photos fully visible and prevent stretched image column */
+.details-image-link {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  min-height: 260px;
+  max-height: 560px;
+  overflow: hidden;
+}
+.details-image {
+  display: block;
+  width: 100%;
+  height: auto !important;
+  max-height: 520px;
+  object-fit: contain !important;
+  object-position: center center;
+}
+@media (max-width: 640px) {
+  .details-image-link { min-height: 220px; }
+  .details-image { max-height: 420px; }
+}
+
+/* v2.8.17: in-page full photo overlay */
+.photo-preview-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
+  max-height: min(76vh, 760px);
+  overflow: auto;
+}
+.photo-preview-image {
+  display: block;
+  max-width: 100%;
+  max-height: min(70vh, 680px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 1rem;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.18);
+}
+@media (max-width: 640px) {
+  .photo-preview-stage { min-height: 260px; max-height: 72vh; }
+  .photo-preview-image { max-height: 62vh; }
+}
+
+
+/* FINAL FIX: keep login logo static and natural */
+.login-logo,
+.auth-logo,
+.logo-img,
+.login-card img,
+.auth-card img {
+  animation: none !important;
+  transform: none !important;
+  transition: none !important;
+  filter: none !important;
+}
