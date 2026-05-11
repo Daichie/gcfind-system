@@ -331,25 +331,9 @@ function setRing(el, value, total, color) {
 /* ===================== SUPABASE DATA HELPERS ===================== */
 async function getAuthUser() {
   if (!requireSupabase()) return null;
-
-  // Supabase sometimes restores session slightly late on slower devices/browsers.
-  // Try getSession first and retry briefly before deciding there is no user.
-  for (let attempt = 0; attempt < 4; attempt++) {
-    try {
-      const { data: sessionData } = await sb.auth.getSession();
-      const sessionUser = sessionData?.session?.user;
-      if (sessionUser) return sessionUser;
-
-      const { data, error } = await sb.auth.getUser();
-      if (!error && data?.user) return data.user;
-    } catch (error) {
-      console.warn('getAuthUser retry:', error);
-    }
-
-    await new Promise(resolve => setTimeout(resolve, 250));
-  }
-
-  return null;
+  const { data, error } = await sb.auth.getUser();
+  if (error) return null;
+  return data.user || null;
 }
 
 async function fetchProfileById(id) {
@@ -427,18 +411,8 @@ async function uploadImageToSupabase(file) {
 async function syncSessionFromSupabase() {
   if (!SUPABASE_READY || !sb) return;
 
-  const cachedUser = getUser();
-  const cachedRole = getRole();
-
   const user = await getAuthUser();
-
-  // If Supabase session is temporarily unavailable but local cache exists,
-  // keep the user on the page instead of instantly redirecting to login.
   if (!user) {
-    if (cachedUser && cachedRole) {
-      console.warn('GCFind: Supabase session not ready, using cached session temporarily.');
-      return;
-    }
     clearSession();
     return;
   }
@@ -464,27 +438,7 @@ function guardPage() {
   const role = getRole();
   const user = getUser();
 
-  function redirectToLoginSafely() {
-    // Give Supabase/localStorage a final moment to restore on slower laptops.
-    setTimeout(() => {
-      const retryRole = getRole();
-      const retryUser = getUser();
-
-      if (required && retryRole === required) return;
-      if (retryUser && retryRole) return;
-
-      window.location.replace('login.html');
-    }, 900);
-  }
-
   if (required && role !== required) {
-    // If there is no cached role yet, do not redirect instantly.
-    // This prevents random login redirects while auth state is still restoring.
-    if (!role && !user) {
-      redirectToLoginSafely();
-      return;
-    }
-
     window.location.replace('login.html');
     return;
   }
@@ -492,18 +446,7 @@ function guardPage() {
   if (requiredUserType) {
     const allowed = requiredUserType.split('|').map(v => v.trim()).filter(Boolean);
     const current = user?.role || '';
-
     if (!allowed.includes(current)) {
-      // If the user object is still restoring, wait briefly before redirecting.
-      if (!current) {
-        setTimeout(() => {
-          const retryUser = getUser();
-          const retryCurrent = retryUser?.role || '';
-          if (!allowed.includes(retryCurrent)) window.location.replace('dashboard.html');
-        }, 900);
-        return;
-      }
-
       window.location.replace('dashboard.html');
     }
   }
@@ -1178,6 +1121,3 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }, 120);
 });
-
-
-// GCFind session guard demo fix applied: delayed auth redirect + cached session fallback.
